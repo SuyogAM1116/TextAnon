@@ -36,20 +36,24 @@ TextAnon is an anonymous text and video chat web application focused on privacy 
 1. **Clone the repository**
 
    ```sh
+   mkdir TextAnon
    git clone https://github.com/SuyogAM1116/TextAnon.git
    cd TextAnon/frontend
 
-Install dependencies
+2. **Install dependencies**
 
-npm install
+   ```sh
+   npm install
 
-Install required packages
+3. **Install required packages**
 
-npm install react-bootstrap bootstrap react-icons
+   ```sh
+   npm install react-bootstrap bootstrap react-icons
 
-Run the development server
+4. **Run the development server**
 
-npm run dev
+   ```sh
+   npm run dev
 
 The app should be running at <http://localhost:5173/>.
 
