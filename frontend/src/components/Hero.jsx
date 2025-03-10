@@ -3,7 +3,11 @@ import { Container, Button } from "react-bootstrap";
 
 const Hero = () => {
   return (
-    <div className="hero-section text-center text-white py-5">
+    <div className="hero-section text-center text-white py-5"
+    style={{
+      borderBottom: "0.01px solid rgba(255, 255, 255, 0.1)", // Light border at the bottom
+      paddingBottom: "60px",
+    }}>
       <Container>
         <h1 className="fw-bold">
           <span className="text-primary">Text</span>
