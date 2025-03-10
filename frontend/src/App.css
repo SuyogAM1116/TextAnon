@@ -1,7 +1,7 @@
 #root {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 0;
   text-align: center;
 }
 
@@ -39,4 +39,36 @@
 
 .read-the-docs {
   color: #888;
+}
+
+/* Navbar */
+.navbar {
+  background-color: #121212 !important; /* Dark navy */
+  position: sticky;
+  top: 0;
+  width: 100%;
+  z-index: 1000;
+}
+
+/* Hero Section */
+.hero-section {
+  background: rgba(83, 82, 91, 0.592);
+  padding: 50px 0;
+  text-align: center;
+}
+
+/* Feature Section */
+.features-section {
+  background-color: rgba(88, 82, 87, 0.592); 
+  
+  color: white;
+  padding: 50px 0;
+}
+
+/* Footer */
+.footer {
+  background-color: rgb(17, 24, 34); /* Black */
+  color: white;
+  text-align: center;
+  padding: 20px 0;
 }
