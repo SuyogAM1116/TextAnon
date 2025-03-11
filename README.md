@@ -57,10 +57,3 @@ TextAnon is an anonymous text and video chat web application focused on privacy 
 
 The app should be running at <http://localhost:5173/>.
 
----
-
-### ✅ **Why this README is useful?**
-
-- **Clear installation steps** including necessary commands  
-- **Direct package installation commands** for Bootstrap and React Icons  
-- **Simple and clean structure**  
