@@ -27,7 +27,7 @@ const Footer = () => {
           <ul className="list-unstyled">
             <li><a href="#faq" className="text-white text-decoration-none">FAQ</a></li>
             <li><a href="#blog" className="text-white text-decoration-none">Blog</a></li>
-            <li><a href="#privacy" className="text-white text-decoration-none">Privacy Policy</a></li>
+            <li><a href="/privacy" className="text-white text-decoration-none">Privacy Policy</a></li>
             <li><a href="#terms" className="text-white text-decoration-none">Terms of Service</a></li>
           </ul>
         </Col>
