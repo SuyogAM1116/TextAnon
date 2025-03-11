@@ -1,24 +1,33 @@
-import React from "react";
+import React, { useContext } from "react";
 import { Container, Row, Col, Button } from "react-bootstrap";
 import Lottie from "lottie-react";
 import animationData from "../assets/video-marketing.json";
 import { Link } from "react-router-dom";
+import { ThemeContext } from "../components/ThemeContext"; // Import ThemeContext
 
 const Hero = () => {
+  const { theme } = useContext(ThemeContext); // Get theme from context
+
   return (
-    <div className="hero-section text-white py-5 d-flex flex-column align-items-center"
+    <div
+      className="hero-section py-5 d-flex flex-column align-items-center"
       style={{
-        borderBottom: "0.5px solid rgba(255, 255, 255, 0.2)",
+        borderBottom: theme === "dark" ? "0.5px solid rgba(255, 255, 255, 0.2)" : "0.5px solid rgba(0, 0, 0, 0.2)",
         paddingBottom: "60px",
         textAlign: "center",
+        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa", // Dark/Light Background
+        color: theme === "dark" ? "#ffffff" : "#333333", // Dark/Light Text Color
       }}
     >
       <Container>
+        {/* Logo with Dynamic Theme Colors */}
         <h1 className="fw-bold" style={{ fontSize: "3.5rem" }}>
           <span className="text-primary">Text</span>
           <span className="text-success">Anon</span>
         </h1>
-        <p className="text-light fs-5 fst-italic">Privacy-first chat & video calls—no login required!</p>
+        <p className="fs-5 fst-italic" style={{ color: theme === "dark" ? "#cccccc" : "#555555" }}>
+          Privacy-first chat & video calls—no login required!
+        </p>
 
         <Row className="align-items-center mt-4">
           <Col md={6} className="d-flex justify-content-center">
@@ -27,7 +36,9 @@ const Hero = () => {
               style={{
                 width: "100%",
                 maxWidth: "400px",
-                filter: "drop-shadow(0px 0px 10px rgba(255, 255, 255, 0.3))",
+                filter: theme === "dark"
+                  ? "drop-shadow(0px 0px 10px rgba(255, 255, 255, 0.3))"
+                  : "drop-shadow(0px 0px 10px rgba(0, 0, 0, 0.3))",
               }}
             />
           </Col>
@@ -37,12 +48,32 @@ const Hero = () => {
               <p className="fw-bold fs-5 mb-3">Get started instantly—choose how you want to connect!</p>
               <div className="d-grid gap-3">
                 <Link to="/chat">
-                  <Button variant="success" size="lg" className="fw-bold" style={{ width: "100%", padding: "14px" }}>
+                  <Button
+                    variant="success" // Retained Success (Green) Button in Both Themes
+                    size="lg"
+                    className="fw-bold"
+                    style={{
+                      width: "100%",
+                      padding: "14px",
+                      border: "2px solid #198754", // Fixed Green Border
+                      color: "#fff",
+                    }}
+                  >
                     Start Chat
                   </Button>
                 </Link>
-                <Link to="/Video">
-                  <Button variant="primary"size="lg" className="fw-bold" style={{ width: "100%", padding: "14px" }}>
+                <Link to="/video">
+                  <Button
+                    variant="primary" // Retained Primary (Blue) Button in Both Themes
+                    size="lg"
+                    className="fw-bold"
+                    style={{
+                      width: "100%",
+                      padding: "14px",
+                      border: "2px solid #0d6efd", // Fixed Blue Border
+                      color: "#fff",
+                    }}
+                  >
                     Start Video Call
                   </Button>
                 </Link>
@@ -51,7 +82,9 @@ const Hero = () => {
           </Col>
         </Row>
 
-        <p className="text-light mt-4">End-to-end encryption | No data stored</p>
+        <p className="mt-4" style={{ color: theme === "dark" ? "#bbbbbb" : "#555555" }}>
+          End-to-end encryption | No data stored
+        </p>
       </Container>
     </div>
   );

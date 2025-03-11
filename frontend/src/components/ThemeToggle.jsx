@@ -1,19 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useContext } from "react";
 import { FaSun, FaMoon } from "react-icons/fa";
+import { ThemeContext } from "../components/ThemeContext"; // Import ThemeContext
 
-const ThemeToggle = ({ onThemeChange }) => {
-  const [darkMode, setDarkMode] = useState(
-    localStorage.getItem("theme") === "dark"
-  );
-
-  useEffect(() => {
-    document.body.setAttribute("data-theme", darkMode ? "dark" : "light");
-    localStorage.setItem("theme", darkMode ? "dark" : "light");
-    onThemeChange(darkMode ? "dark" : "light");
-  }, [darkMode, onThemeChange]);
+const ThemeToggle = () => {
+  const { theme, setTheme } = useContext(ThemeContext); // Get theme & setTheme from context
 
   const toggleTheme = () => {
-    setDarkMode((prevMode) => !prevMode);
+    setTheme(theme === "dark" ? "light" : "dark");
   };
 
   return (
@@ -25,13 +18,13 @@ const ThemeToggle = ({ onThemeChange }) => {
           borderRadius: "20px",
           padding: "6px 15px",
           fontSize: "16px",
-          backgroundColor: darkMode ? "#343a40" : "#f8f9fa",
-          color: darkMode ? "#ffc107" : "#343a40",
-          border: darkMode ? "1px solid #ffc107" : "3px solid #343a40",
+          backgroundColor: theme === "dark" ? "#343a40" : "#f8f9fa",
+          color: theme === "dark" ? "#ffc107" : "#343a40",
+          border: theme === "dark" ? "1px solid #ffc107" : "3px solid #343a40",
         }}
       >
-        {darkMode ? <FaSun size={20} className="text-warning" /> : <FaMoon size={20} />}
-        {darkMode ? "Light Mode" : "Dark Mode"}
+        {theme === "dark" ? <FaSun size={20} className="text-warning" /> : <FaMoon size={20} />}
+        {theme === "dark" ? "Light Mode" : "Dark Mode"}
       </button>
     </div>
   );

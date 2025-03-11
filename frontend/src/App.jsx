@@ -8,23 +8,26 @@ import About from "./pages/About";
 import Settings from "./pages/Settings";
 import NavBar from "./components/NavBar";
 import Footer from "./components/Footer";
+import { ThemeProvider } from "./components/ThemeContext"; // Import ThemeProvider
 
 function App() {
   return (
-    <Router>
-      <div>
-        <NavBar />
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/chat" element={<Chat />} />
-          <Route path="/Video" element={<Video />} />
-          <Route path="/Privacy" element={<Privacy />} />
-          <Route path="/About" element={<About />} />
-          <Route path="/Settings" element={<Settings />} />
-        </Routes>
-        <Footer />
-      </div>
-    </Router>
+    <ThemeProvider> {/* Wrap the app with ThemeProvider */}
+      <Router>
+        <div>
+          <NavBar />
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/chat" element={<Chat />} />
+            <Route path="/video" element={<Video />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/settings" element={<Settings />} />
+          </Routes>
+          <Footer />
+        </div>
+      </Router>
+    </ThemeProvider>
   );
 }
 
