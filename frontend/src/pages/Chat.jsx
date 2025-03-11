@@ -1,17 +1,20 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useContext } from "react";
 import { Container, Row, Col, Button, Form, InputGroup } from "react-bootstrap";
-import { FaVideo, FaPaperPlane } from "react-icons/fa";
+import { FaPaperPlane, FaVideo } from "react-icons/fa";
+import NameSelection from "../components/NameSelection";
+import { ThemeContext } from "../components/ThemeContext";
 
 const Chat = () => {
+  const { theme } = useContext(ThemeContext);
   const [name, setName] = useState("");
   const [chatStarted, setChatStarted] = useState(false);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const chatContainerRef = useRef(null);
   const videoButtonRef = useRef(null);
-  const [showVideoButton, setShowVideoButton] = useState(true);
+  const footerRef = useRef(null);
+  const [buttonBottom, setButtonBottom] = useState("20px");
 
-  // Set initial chat when user picks a name
   const startChat = () => {
     if (name.trim() !== "") {
       setMessages([
@@ -23,15 +26,13 @@ const Chat = () => {
     }
   };
 
-  // Handles sending a message
   const sendMessage = () => {
     if (newMessage.trim() !== "") {
       setMessages([...messages, { sender: `${name} (you)`, text: newMessage }]);
-      setNewMessage(""); // Clear input after sending
+      setNewMessage("");
     }
   };
 
-  // Allows sending message with Enter key
   const handleKeyPress = (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -39,13 +40,19 @@ const Chat = () => {
     }
   };
 
-  // Detect scrolling to hide the video button when near the footer
   useEffect(() => {
     const handleScroll = () => {
-      if (!videoButtonRef.current) return;
-      const videoButtonRect = videoButtonRef.current.getBoundingClientRect();
-      setShowVideoButton(videoButtonRect.top < window.innerHeight - 100);
+      if (!footerRef.current || !videoButtonRef.current) return;
+      const footerTop = footerRef.current.getBoundingClientRect().top;
+      const windowHeight = window.innerHeight;
+
+      if (footerTop < windowHeight - 50) {
+        setButtonBottom(`${windowHeight - footerTop + 20}px`);
+      } else {
+        setButtonBottom("20px");
+      }
     };
+
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
@@ -56,61 +63,68 @@ const Chat = () => {
       style={{
         height: "100vh",
         width: "100vw",
-        backgroundColor: "#1e1e1e",
+        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa",
+        color: theme === "dark" ? "#ffffff" : "#333333",
         position: "relative",
         overflow: "hidden",
+        transition: "background-color 0.3s ease, color 0.3s ease",
       }}
     >
-      <Container className="text-white">
+      <Container>
         {!chatStarted ? (
-          <Row className="justify-content-center">
-            <Col md={6} className="text-center p-4 bg-dark rounded">
-              <h2 className="mb-3">Anonymous Chat</h2>
-              <Form.Control
-                type="text"
-                placeholder="Choose a name"
-                className="mb-3 text-center"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <Button variant="success" onClick={startChat}>
-                Start Chat
-              </Button>
-            </Col>
-          </Row>
+          <NameSelection name={name} setName={setName} startChat={startChat} />
         ) : (
           <Row className="justify-content-center">
-            <Col md={6} className="p-3 bg-dark rounded">
+            <Col
+              md={6}
+              className="p-3 rounded"
+              style={{
+                backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
+                color: theme === "dark" ? "#ffffff" : "#333333",
+                border: theme === "dark"
+                  ? "0.5px solid rgba(255, 255, 255, 0.2)"
+                  : "0.5px solid rgba(0, 0, 0, 0.2)",
+                boxShadow: theme === "dark"
+                  ? "0px 4px 10px rgba(255, 255, 255, 0.1)"
+                  : "0px 4px 10px rgba(0, 0, 0, 0.1)",
+                transition: "background-color 0.3s ease, color 0.3s ease",
+              }}
+            >
               <h2 className="text-center">Anonymous Chat</h2>
 
               {/* Chat Box */}
               <div
                 ref={chatContainerRef}
-                className="chat-box p-3 bg-secondary rounded mt-3"
+                className="chat-box p-3 rounded mt-3"
                 style={{
                   height: "400px",
                   overflowY: "auto",
                   display: "flex",
                   flexDirection: "column",
+                  backgroundColor: theme === "dark" ? "#2c2c2c" : "#f0f0f0",
+                  transition: "background-color 0.3s ease",
                 }}
               >
                 {messages.map((msg, index) => (
                   <div
                     key={index}
-                    className={`p-2 rounded mb-2 ${
-                      msg.sender.includes("(you)")
-                        ? "bg-success text-light ms-auto"
-                        : "bg-dark text-light"
-                    }`}
+                    className="p-2 rounded mb-2"
                     style={{
                       width: "fit-content",
                       maxWidth: "80%",
                       alignSelf: msg.sender.includes("(you)")
                         ? "flex-end"
                         : "flex-start",
+                      backgroundColor: msg.sender.includes("(you)")
+                        ? "#198754" // Green for user messages
+                        : "#0d6efd", // Blue for Stranger messages
+                      color: "#ffffff",
+                      padding: "10px",
+                      borderRadius: "12px",
+                      fontSize: "14px",
                     }}
                   >
-                    {msg.sender}: {msg.text}
+                    <strong>{msg.sender}:</strong> {msg.text}
                   </div>
                 ))}
               </div>
@@ -123,6 +137,12 @@ const Chat = () => {
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyDown={handleKeyPress}
+                  style={{
+                    backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
+                    color: theme === "dark" ? "#ffffff" : "#333333",
+                    border: theme === "dark" ? "1px solid #444" : "1px solid #ccc",
+                    transition: "background-color 0.3s ease, color 0.3s ease",
+                  }}
                 />
                 <Button variant="primary" onClick={sendMessage}>
                   <FaPaperPlane />
@@ -131,12 +151,48 @@ const Chat = () => {
 
               {/* Next Button */}
               <Button variant="success" className="mt-3 w-100">
-                Next
+                Skip to next
               </Button>
             </Col>
           </Row>
         )}
       </Container>
+
+      {/* Floating Video Button (Now on Bottom Right) */}
+      {chatStarted && (
+        <Button
+          ref={videoButtonRef}
+          variant="success"
+          className="video-call-button"
+          style={{
+            position: "fixed",
+            bottom: buttonBottom,
+            right: "20px",
+            zIndex: 1000,
+            borderRadius: "50%",
+            width: "50px",
+            height: "50px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <FaVideo size={20} />
+        </Button>
+      )}
+
+      {/* Footer Reference */}
+      <div
+        ref={footerRef}
+        style={{
+          position: "absolute",
+          bottom: 0,
+          width: "100%",
+          height: "50px",
+          backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa",
+          transition: "background-color 0.3s ease",
+        }}
+      />
     </div>
   );
 };
