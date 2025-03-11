@@ -16,8 +16,7 @@ const Footer = () => {
         <Col xs={6} md={3} className="mb-3">
           <h6 className="fw-bold">Explore More</h6>
           <ul className="list-unstyled">
-            
-            <li><a href="#about" className="text-white text-decoration-none">About Us</a></li>
+            <li><a href="/about" className="text-white text-decoration-none">About Us</a></li>
             <li><a href="#contact" className="text-white text-decoration-none">Contact</a></li>
           </ul>
         </Col>
@@ -36,15 +35,15 @@ const Footer = () => {
         {/* Social Media */}
         <Col xs={12} md={3} className="mb-3">
           <h6 className="fw-bold">Follow Us</h6>
-          <a href="https://facebook.com" className="text-white me-3">
+          <a href="https://facebook.com" className="text-white me-3 text-decoration-none">
             <FaFacebook size={18} /> Facebook
           </a>
           <br />
-          <a href="https://twitter.com" className="text-white me-3">
+          <a href="https://twitter.com" className="text-white me-3 text-decoration-none">
             <FaXTwitter size={18} /> X (Twitter)
           </a>
           <br />
-          <a href="https://instagram.com" className="text-white">
+          <a href="https://instagram.com" className="text-white text-decoration-none">
             <FaInstagram size={18} /> Instagram
           </a>
         </Col>

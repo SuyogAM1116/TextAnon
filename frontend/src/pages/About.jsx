@@ -1,120 +1,150 @@
-import React from "react";
+import React, { useContext } from "react";
+import { Container, Row, Col, Card, Button } from "react-bootstrap";
+import { FaUsers, FaShieldAlt, FaRocket, FaCheckCircle, FaArrowLeft, FaBell } from "react-icons/fa";
 import { Link } from "react-router-dom";
-import { FaUsers, FaShieldAlt, FaRocket, FaCheckCircle, FaArrowLeft } from "react-icons/fa";
+import { ThemeContext } from "../components/ThemeContext"; // Correct import
 
 const About = () => {
-  const styles = {
-    page: {
-      width: "100%",
-      minHeight: "100vh",
-      backgroundColor: "#121212",
-      color: "#f1f1f1",
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      textAlign: "center",
-      flexDirection: "column",
-      paddingTop: "10px",
-      paddingBottom: "60px",
-    },
-    container: {
-      width: "90%",
-      maxWidth: "800px",
-      padding: "20px",
-    },
-    title: {
-      fontSize: "2.5em",
-      fontWeight: "bold",
-      marginBottom: "10px",
-    },
-    subtitle: {
-      fontSize: "1.2em",
-      marginBottom: "20px",
-    },
-    box: {
-      backgroundColor: "#1e1e1e",
-      padding: "15px",
-      margin: "15px auto",
-      borderRadius: "8px",
-      borderLeft: "5px solid #28a745",
-      textAlign: "left",
-    },
-    boxTitle: {
-      color: "#fff",
-      fontSize: "1.5em",
-    },
-    boxText: {
-      fontSize: "1.1em",
-      color: "#d3d3d3",
-    },
-    footer: {
-      fontSize: "1em",
-      color: "#ccc",
-      marginTop: "20px",
-    },
-    backHome: {
-      display: "inline-block",
-      marginTop: "20px",
-      color: "#28a745",
-      fontSize: "1.2em",
-      textDecoration: "none",
-    },
-  };
+  const { theme } = useContext(ThemeContext); // Get theme state
 
   return (
-    <div style={styles.page}>
-      <div style={styles.container}>
-        <h1 style={styles.title}>
-          <FaUsers /> About TextAnon
+    <div
+      className="about-section py-5 d-flex flex-column align-items-center"
+      style={{
+        borderBottom: theme === "dark" ? "0.5px solid rgba(255, 255, 255, 0.2)" : "0.5px solid rgba(0, 0, 0, 0.2)",
+        paddingBottom: "60px",
+        textAlign: "center",
+        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa", // Dark/Light Background
+        color: theme === "dark" ? "#ffffff" : "#333333", // Dark/Light Text Color
+      }}
+    >
+      <Container>
+        <h1 className="fw-bold" style={{ fontSize: "3rem" }}>
+          <FaUsers className="me-2" /> About <span className="text-primary">Text</span>
+          <span className="text-success">Anon</span>
         </h1>
-        <p style={styles.subtitle}>
+        <p className="fs-5 fst-italic" style={{ color: theme === "dark" ? "#cccccc" : "#555555" }}>
           A place where you can chat freely, anonymously, and securely with strangers worldwide.
         </p>
 
-        <div style={styles.box}>
-          <h3 style={styles.boxTitle}>🚀 Our Mission</h3>
-          <p style={styles.boxText}>
-            At TextAnon, we believe in **free and open communication** without sacrificing privacy. Our goal is to provide a **secure, anonymous** platform where users can connect **without fear of data tracking or surveillance**.
-          </p>
-        </div>
+        <Row className="justify-content-center mt-4">
+          {/* Mission - Single Column */}
+          <Col md={12} className="mb-4">
+            <Card
+              style={{
+                backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
+                borderLeft: `5px solid ${theme === "dark" ? "#28a745" : "#198754"}`,
+                color: theme === "dark" ? "#f1f1f1" : "#212529",
+                boxShadow: theme === "dark"
+                  ? "0 4px 10px rgba(255, 255, 255, 0.1)"
+                  : "0 4px 10px rgba(0, 0, 0, 0.1)",
+              }}
+              className="p-3"
+            >
+              <h3 className="fw-bold">
+                <FaRocket className="me-2" /> Our Mission
+              </h3>
+              <p>
+                We believe in <strong>free and open communication</strong> without sacrificing privacy. Our goal is to provide a <strong>secure, anonymous</strong> platform where users can connect without fear of data tracking.
+              </p>
+            </Card>
+          </Col>
 
-        <div style={styles.box}>
-          <h3 style={styles.boxTitle}>🔒 Why Choose TextAnon?</h3>
-          <p style={styles.boxText}>
-            Unlike other chat platforms, **we don’t collect data, require sign-ups, or store chat logs**. Whether you're looking for casual conversations or deep discussions, **your privacy is always protected**.
-          </p>
-        </div>
+          {/* Why Choose Us - Single Column */}
+          <Col md={12} className="mb-4">
+            <Card
+              style={{
+                backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
+                borderLeft: `5px solid ${theme === "dark" ? "#ffc107" : "#fd7e14"}`,
+                color: theme === "dark" ? "#f1f1f1" : "#212529",
+              }}
+              className="p-3"
+            >
+              <h3 className="fw-bold">
+                <FaShieldAlt className="me-2" /> Why Choose Us?
+              </h3>
+              <p>
+                Unlike other chat platforms, <strong>we don’t collect data, require sign-ups, or store chat logs</strong>. Whether you're looking for casual conversations or deep discussions, your <strong>privacy is always protected</strong>.
+              </p>
+            </Card>
+          </Col>
 
-        <div style={styles.box}>
-          <h3 style={styles.boxTitle}>🛡️ Key Features</h3>
-          <p style={styles.boxText}>
-            <FaShieldAlt /> **End-to-End Encryption** – No one, not even us, can read your messages.  
-            <br />
-            <FaCheckCircle /> **No Sign-Ups** – Just click and start chatting, no email or phone required.  
-            <br />
-            <FaCheckCircle /> **Self-Destructing Messages** – Once the chat is closed, everything is gone.  
-            <br />
-            <FaCheckCircle /> **Anonymous Video Calls** – Secure, peer-to-peer encrypted video chats.  
-            <br />
-            <FaCheckCircle /> **Report & Block Feature** – Stay safe by reporting inappropriate users.  
-          </p>
-        </div>
+          {/* Key Features - Single Column */}
+          <Col md={12} className="mb-4">
+            <Card
+              style={{
+                backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
+                borderLeft: `5px solid ${theme === "dark" ? "#17a2b8" : "#0d6efd"}`,
+                color: theme === "dark" ? "#f1f1f1" : "#212529",
+              }}
+              className="p-3"
+            >
+              <h3 className="fw-bold">
+                <FaCheckCircle className="me-2" /> Key Features
+              </h3>
+              <ul className="list-unstyled">
+                <li>
+                  <FaCheckCircle className="text-success me-2" />
+                  <strong>End-to-End Encryption</strong> – No one can read your messages.
+                </li>
+                <li>
+                  <FaCheckCircle className="text-success me-2" />
+                  <strong>No Sign-Ups</strong> – Start chatting instantly.
+                </li>
+                <li>
+                  <FaCheckCircle className="text-success me-2" />
+                  <strong>Self-Destructing Messages</strong> – No chat logs saved.
+                </li>
+                <li>
+                  <FaCheckCircle className="text-success me-2" />
+                  <strong>Anonymous Video Calls</strong> – Fully encrypted.
+                </li>
+                <li>
+                  <FaCheckCircle className="text-success me-2" />
+                  <strong>Report & Block Feature</strong> – Stay safe from bad actors.
+                </li>
+              </ul>
+            </Card>
+          </Col>
 
-        <div style={styles.box}>
-          <h3 style={styles.boxTitle}>🌎 Our Vision</h3>
-          <p style={styles.boxText}>
-            We envision a world where **privacy is a right, not a luxury**. In a time when big corporations track everything, TextAnon stands as a **safe space for open conversations without surveillance**.
-          </p>
-        </div>
+          {/* Vision - Single Column */}
+          <Col md={12} className="mb-4">
+            <Card
+              style={{
+                backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
+                borderLeft: `5px solid ${theme === "dark" ? "#6610f2" : "#6f42c1"}`,
+                color: theme === "dark" ? "#f1f1f1" : "#212529",
+              }}
+              className="p-3"
+            >
+              <h3 className="fw-bold">
+                <FaUsers className="me-2" /> Our Vision
+              </h3>
+              <p>
+                We envision a world where <strong>privacy is a right, not a luxury</strong>. In a time when big corporations track everything, TextAnon stands as a <strong>safe space for open conversations</strong>.
+              </p>
+            </Card>
+          </Col>
+        </Row>
 
-        <p style={styles.footer}>
-          🔔 Join TextAnon today and experience a truly private, anonymous chat.
+        {/* Notification */}
+        <p className="fs-5 mt-4" style={{ color: theme === "dark" ? "#bbbbbb" : "#555555" }}>
+          <FaBell className="text-warning me-2" />
+          Join TextAnon today and experience true anonymity!
         </p>
 
-        <Link to="/" style={styles.backHome}>
-          <FaArrowLeft /> Back to Home
+        {/* Back to Home Button */}
+        <Link to="/">
+          <Button
+            variant={theme === "dark" ? "success" : "outline-success"}
+            size="lg"
+            className="fw-bold"
+          >
+            <FaArrowLeft className="me-2" />
+            Back to Home
+          </Button>
         </Link>
-      </div>
+      </Container>
     </div>
   );
 };
