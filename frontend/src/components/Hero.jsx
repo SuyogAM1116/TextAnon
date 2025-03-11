@@ -41,14 +41,11 @@ const Hero = () => {
                     Start Chat
                   </Button>
                 </Link>
-                <Button
-                  variant="primary"
-                  size="lg"
-                  className="fw-bold"
-                  style={{ width: "100%", padding: "14px" }}
-                >
-                  Start Video Call
-                </Button>
+                <Link to="/Video">
+                  <Button variant="primary"size="lg" className="fw-bold" style={{ width: "100%", padding: "14px" }}>
+                    Start Video Call
+                  </Button>
+                </Link>
               </div>
             </div>
           </Col>

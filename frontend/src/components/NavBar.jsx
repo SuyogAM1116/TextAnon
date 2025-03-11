@@ -42,14 +42,18 @@ const NavBar = () => {
 
         <Navbar.Collapse id="basic-navbar-nav">
           <Nav className="ms-auto align-items-center d-flex">
-            {/* Other Navbar Icons */}
-            <Nav.Link href="#security" className="ms-3">
+            {/* Privacy & Security Page */}
+            <Nav.Link onClick={() => navigate("/privacy")} className="ms-3" style={{ cursor: "pointer" }}>
               <FaLock className={theme === "dark" ? "text-white" : "text-dark"} size={30} />
             </Nav.Link>
-            <Nav.Link href="#about" className="ms-3">
+
+            {/* About Page */}
+            <Nav.Link onClick={() => navigate("/about")} className="ms-3" style={{ cursor: "pointer" }}>
               <FaInfoCircle className={theme === "dark" ? "text-white" : "text-dark"} size={30} />
             </Nav.Link>
-            <Nav.Link href="#settings" className="ms-3">
+
+            {/* Settings Page (Now Routed to Settings.jsx) */}
+            <Nav.Link onClick={() => navigate("/settings")} className="ms-3" style={{ cursor: "pointer" }}>
               <FaCog className={theme === "dark" ? "text-white" : "text-dark"} size={30} />
             </Nav.Link>
 
