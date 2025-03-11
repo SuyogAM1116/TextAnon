@@ -2,19 +2,17 @@ import React, { useState, useRef, useEffect } from "react";
 
 const Video = () => {
   const [username, setUsername] = useState("");
+  const [nameConfirmed, setNameConfirmed] = useState(false);
   const [callStarted, setCallStarted] = useState(false);
   const [muted, setMuted] = useState(false);
   const [videoEnabled, setVideoEnabled] = useState(true);
 
   const userVideoRef = useRef(null);
   const strangerVideoRef = useRef(null);
-  const peerConnection = useRef(null);
   const streamRef = useRef(null);
 
-  // Function to start the video call
+  // Start Video Call
   const startVideoCall = async () => {
-    if (!username.trim()) return;
-
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
@@ -26,8 +24,7 @@ const Video = () => {
         userVideoRef.current.srcObject = stream;
       }
 
-      // Placeholder: This is where WebRTC signaling and connection logic will be added
-      // For now, simulate the stranger's video by mirroring the user's video
+      // Simulate stranger video (for testing)
       setTimeout(() => {
         if (strangerVideoRef.current) {
           strangerVideoRef.current.srcObject = stream;
@@ -62,16 +59,16 @@ const Video = () => {
       streamRef.current.getTracks().forEach(track => track.stop());
     }
     setCallStarted(false);
+    setNameConfirmed(false);
     setUsername("");
   };
 
   return (
     <div style={styles.container}>
-      {/* If call hasn't started, show name input */}
-      {!callStarted ? (
-        <div style={styles.nameEntryBox}>
-          <h2>Anonymous Video Call</h2>
-          <label>Enter your name: </label>
+      {/* Name Selection */}
+      {!nameConfirmed ? (
+        <div style={styles.nameSelection}>
+          <h2 style={styles.heading}>Anonymous Video Call</h2>
           <input
             type="text"
             value={username}
@@ -79,8 +76,21 @@ const Video = () => {
             placeholder="Choose a name"
             style={styles.input}
           />
+          <button
+            onClick={() => setNameConfirmed(username.trim() !== "")}
+            style={styles.startButton}
+          >
+            Start Video
+          </button>
+        </div>
+      ) : !callStarted ? (
+        <div style={styles.callScreen}>
+          <h2>Anonymous Video Call</h2>
           <button onClick={startVideoCall} style={styles.startButton}>
             Start Video Call
+          </button>
+          <button onClick={endCall} style={styles.nextButton}>
+            Next
           </button>
         </div>
       ) : (
@@ -98,6 +108,7 @@ const Video = () => {
               {videoEnabled ? "Disable Video" : "Enable Video"}
             </button>
             <button onClick={endCall} style={styles.endButton}>End</button>
+            <button onClick={endCall} style={styles.nextButton}>Next</button>
           </div>
         </div>
       )}
@@ -116,25 +127,41 @@ const styles = {
     alignItems: "center",
     flexDirection: "column",
   },
-  nameEntryBox: {
-    backgroundColor: "#333",
-    padding: "20px",
+  nameSelection: {
+    backgroundColor: "#1e1e1e",
+    padding: "25px",
     borderRadius: "10px",
     textAlign: "center",
+    width: "400px",
+    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.2)",
+  },
+  heading: {
+    color: "#fff",
+    fontSize: "24px",
+    marginBottom: "15px",
   },
   input: {
-    padding: "10px",
-    margin: "10px 0",
+    width: "100%",
+    padding: "12px",
     borderRadius: "5px",
     border: "none",
+    fontSize: "16px",
+    textAlign: "center",
+    outline: "none",
   },
   startButton: {
-    padding: "10px 20px",
-    backgroundColor: "#777",
+    width: "100%",
+    padding: "12px",
+    backgroundColor: "#198754",
     color: "#fff",
     border: "none",
     borderRadius: "5px",
     cursor: "pointer",
+    fontSize: "16px",
+    marginTop: "10px",
+  },
+  callScreen: {
+    textAlign: "center",
   },
   videoCallBox: {
     textAlign: "center",
@@ -167,6 +194,14 @@ const styles = {
   endButton: {
     padding: "10px",
     backgroundColor: "red",
+    color: "#fff",
+    border: "none",
+    borderRadius: "5px",
+    cursor: "pointer",
+  },
+  nextButton: {
+    padding: "10px",
+    backgroundColor: "#6c757d",
     color: "#fff",
     border: "none",
     borderRadius: "5px",

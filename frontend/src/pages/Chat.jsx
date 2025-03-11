@@ -44,7 +44,7 @@ const Chat = () => {
     const handleScroll = () => {
       if (!videoButtonRef.current) return;
       const videoButtonRect = videoButtonRef.current.getBoundingClientRect();
-      setShowVideoButton(videoButtonRect.top < window.innerHeight - 100); // Hide when near footer
+      setShowVideoButton(videoButtonRect.top < window.innerHeight - 100);
     };
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
@@ -128,26 +128,15 @@ const Chat = () => {
                   <FaPaperPlane />
                 </Button>
               </InputGroup>
+
+              {/* Next Button */}
+              <Button variant="success" className="mt-3 w-100">
+                Next
+              </Button>
             </Col>
           </Row>
         )}
       </Container>
-
-      {/* Video Chat Button - stops at footer */}
-      {chatStarted && showVideoButton && (
-        <Button
-          ref={videoButtonRef}
-          variant="light"
-          className="position-fixed"
-          style={{
-            bottom: "80px",
-            right: "20px",
-            zIndex: 999,
-          }}
-        >
-          <FaVideo size={24} />
-        </Button>
-      )}
     </div>
   );
 };
