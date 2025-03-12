@@ -28,7 +28,7 @@ const Settings = () => {
       <div style={sectionStyle(theme)}>
         <h3>General</h3>
         <label style={optionStyle}>
-          Dark Mode:
+          Dark Mode / Light Mode:
           <Button
             variant={darkModeEnabled ? "danger" : "success"}
             onClick={() => {
