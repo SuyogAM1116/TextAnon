@@ -188,7 +188,7 @@ const Chat = () => {
           position: "absolute",
           bottom: 0,
           width: "100%",
-          height: "50px",
+          height: "1px",
           backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa",
           transition: "background-color 0.3s ease",
         }}
