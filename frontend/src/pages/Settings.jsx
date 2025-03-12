@@ -1,6 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
+import { ThemeContext } from "../components/ThemeContext";
+import { Link } from "react-router-dom";
+import { Button } from "react-bootstrap";
+import { FaMoon, FaSun, FaClock, FaFont, FaVideo, FaMicrophoneSlash, FaCamera, FaArrowLeft } from "react-icons/fa";
 
 const Settings = () => {
+  const { theme, setTheme, darkModeEnabled, setDarkModeEnabled } = useContext(ThemeContext);
   const [selfDestruct, setSelfDestruct] = useState(false);
   const [destructTime, setDestructTime] = useState("5min");
   const [customTime, setCustomTime] = useState("");
@@ -8,8 +13,8 @@ const Settings = () => {
   return (
     <div
       style={{
-        backgroundColor: "#222",
-        color: "#fff",
+        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa",
+        color: theme === "dark" ? "#ffffff" : "#333333",
         minHeight: "100vh",
         padding: "20px",
         display: "flex",
@@ -20,21 +25,28 @@ const Settings = () => {
       <h2>Settings</h2>
 
       {/* General Settings */}
-      <div style={sectionStyle}>
+      <div style={sectionStyle(theme)}>
         <h3>General</h3>
         <label style={optionStyle}>
           Dark Mode:
-          <input type="checkbox" />
+          <Button
+            variant={darkModeEnabled ? "danger" : "success"}
+            onClick={() => {
+              setDarkModeEnabled(!darkModeEnabled);
+              if (!darkModeEnabled) setTheme("dark"); // Enable with Dark Mode by default
+            }}
+          >
+            {darkModeEnabled ? "Disable" : "Enable"}
+          </Button>
         </label>
       </div>
 
       {/* Message & Chat Settings */}
-      <div style={sectionStyle}>
+      <div style={sectionStyle(theme)}>
         <h3>Message and Chat</h3>
 
-        {/* Self-Destructing Messages */}
         <label style={optionStyle}>
-          Self-Destructing Messages:
+          <FaClock className="me-2" /> Self-Destructing Messages:
           <input
             type="checkbox"
             checked={selfDestruct}
@@ -42,14 +54,13 @@ const Settings = () => {
           />
         </label>
 
-        {/* Self-Destruction Time (Appears Only if Self-Destructing is Enabled) */}
         {selfDestruct && (
           <label style={optionStyle}>
             Self-Destruction Time:
             <select
               value={destructTime}
               onChange={(e) => setDestructTime(e.target.value)}
-              style={selectStyle}
+              style={selectStyle(theme)}
             >
               <option value="2min">2 min</option>
               <option value="5min">5 min</option>
@@ -59,7 +70,6 @@ const Settings = () => {
           </label>
         )}
 
-        {/* Custom Time Input (Appears Only When "Custom" is Selected) */}
         {selfDestruct && destructTime === "custom" && (
           <label style={optionStyle}>
             Enter Custom Time (in minutes):
@@ -68,14 +78,14 @@ const Settings = () => {
               min="1"
               value={customTime}
               onChange={(e) => setCustomTime(e.target.value)}
-              style={inputStyle}
+              style={inputStyle(theme)}
             />
           </label>
         )}
 
         <label style={optionStyle}>
-          Chat Font Size:
-          <select style={selectStyle}>
+          <FaFont className="me-2" /> Chat Font Size:
+          <select style={selectStyle(theme)}>
             <option>Small</option>
             <option>Medium</option>
             <option>Large</option>
@@ -84,41 +94,49 @@ const Settings = () => {
       </div>
 
       {/* Video Call Settings */}
-      <div style={sectionStyle}>
+      <div style={sectionStyle(theme)}>
         <h3>Video Call</h3>
         <label style={optionStyle}>
-          Video Quality:
-          <select style={selectStyle}>
+          <FaVideo className="me-5" /> Video Quality:
+          <select style={selectStyle(theme)}>
             <option>Low</option>
             <option>Medium</option>
             <option>High</option>
           </select>
         </label>
         <label style={optionStyle}>
-          Disable Camera:
+          <FaCamera className="me-1" /> Disable Camera:
           <input type="checkbox" />
         </label>
         <label style={optionStyle}>
-          Auto-Mute on Join:
+          <FaMicrophoneSlash className="me-4" /> Auto-Mute on Join:
           <input type="checkbox" />
         </label>
       </div>
 
-      <button style={backButtonStyle} onClick={() => window.history.back()}>
-        Back to Home
-      </button>
+      {/* Back to Home Button */}
+      <Link to="/">
+        <Button
+          variant={theme === "dark" ? "success" : "outline-success"}
+          size="lg"
+          className="fw-bold"
+        >
+          <FaArrowLeft className="me-2" />
+          Back to Home
+        </Button>
+      </Link>
     </div>
   );
 };
 
 /* Styles */
-const sectionStyle = {
-  backgroundColor: "#333",
+const sectionStyle = (theme) => ({
+  backgroundColor: theme === "dark" ? "#333" : "#ddd",
   padding: "15px",
   marginBottom: "15px",
   width: "80%",
   borderRadius: "8px",
-};
+});
 
 const optionStyle = {
   display: "flex",
@@ -126,35 +144,25 @@ const optionStyle = {
   alignItems: "center",
   marginBottom: "10px",
   fontSize: "16px",
+  width: "100%",
 };
 
-const selectStyle = {
+const selectStyle = (theme) => ({
   padding: "5px",
-  backgroundColor: "#444",
-  color: "#fff",
+  backgroundColor: theme === "dark" ? "#444" : "#fff",
+  color: theme === "dark" ? "#fff" : "#333",
   border: "none",
   borderRadius: "4px",
-};
+});
 
-const inputStyle = {
+const inputStyle = (theme) => ({
   padding: "5px",
-  backgroundColor: "#444",
-  color: "#fff",
+  backgroundColor: theme === "dark" ? "#444" : "#fff",
+  color: theme === "dark" ? "#fff" : "#333",
   border: "none",
   borderRadius: "4px",
   marginLeft: "10px",
   width: "60px",
-};
-
-const backButtonStyle = {
-  marginTop: "20px",
-  padding: "10px",
-  backgroundColor: "#007bff",
-  color: "#fff",
-  border: "none",
-  borderRadius: "5px",
-  cursor: "pointer",
-};
-
+});
 
 export default Settings;

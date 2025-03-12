@@ -6,7 +6,7 @@ import ThemeToggle from "./ThemeToggle";
 import { ThemeContext } from "../components/ThemeContext"; // Import ThemeContext
 
 const NavBar = () => {
-  const { theme } = useContext(ThemeContext); // Get theme from context
+  const { theme, darkModeEnabled } = useContext(ThemeContext);
   const navigate = useNavigate();
 
   return (
@@ -52,9 +52,11 @@ const NavBar = () => {
               <FaCog className={theme === "dark" ? "text-white" : "text-dark"} size={30} />
             </Nav.Link>
 
-            <div className="ms-5">
-              <ThemeToggle /> {/* No props needed */}
-            </div>
+            {darkModeEnabled && (
+              <div className="ms-5">
+                <ThemeToggle />
+              </div>
+            )}
           </Nav>
         </Navbar.Collapse>
       </Container>
