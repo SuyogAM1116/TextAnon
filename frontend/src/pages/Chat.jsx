@@ -18,7 +18,7 @@ const Chat = () => {
 
   useEffect(() => {
     if (chatStarted) {
-      socketRef.current = new WebSocket("ws://localhost:8080");
+      socketRef.current = new WebSocket("wss://textanon.onrender.com");
 
       socketRef.current.onopen = () => console.log("✅ Connected to WebSocket Server");
 
