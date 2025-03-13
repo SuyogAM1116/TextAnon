@@ -10,85 +10,94 @@ const Chat = () => {
   const [chatStarted, setChatStarted] = useState(false);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
+  const userIDRef = useRef(null);
   const chatContainerRef = useRef(null);
-  const videoButtonRef = useRef(null);
-  const footerRef = useRef(null);
-  const [buttonBottom, setButtonBottom] = useState("20px");
   const socketRef = useRef(null);
 
   useEffect(() => {
     if (chatStarted) {
-      socketRef.current = new WebSocket("wss://textanon.onrender.com");
+      socketRef.current = new WebSocket("ws://localhost:8080");
 
-      socketRef.current.onopen = () => console.log("✅ Connected to WebSocket Server");
+      socketRef.current.onopen = () => {
+        console.log("✅ Connected to WebSocket Server");
+        socketRef.current.send(JSON.stringify({ type: "register", name }));
+      };
 
       socketRef.current.onmessage = async (event) => {
         try {
-          let receivedMessage;
-          
-          if (event.data instanceof Blob) {
-            const textData = await event.data.text();
-            receivedMessage = JSON.parse(textData);
-          } else {
-            receivedMessage = JSON.parse(event.data);
-          }
+          let receivedMessage = event.data instanceof Blob 
+            ? JSON.parse(await event.data.text()) 
+            : JSON.parse(event.data);
 
-          setMessages((prevMessages) => [
-            ...prevMessages,
-            { sender: receivedMessage.sender || "Stranger", text: receivedMessage.text },
-          ]);
+          console.log("📩 Message from Server:", receivedMessage);
+
+          if (receivedMessage.type === "userID") {
+            userIDRef.current = receivedMessage.userID;
+            console.log("✅ UserID Received & Stored:", userIDRef.current);
+          } else if (receivedMessage.type === "chat") {
+            setMessages((prevMessages) => [
+              ...prevMessages,
+              {
+                senderID: receivedMessage.senderID,
+                senderName: receivedMessage.senderName,
+                text: receivedMessage.text,
+              },
+            ]);
+          } else if (["offer", "answer", "candidate"].includes(receivedMessage.type)) {
+            // Handle WebRTC messages (to be integrated with video call functionality)
+            console.log("📡 WebRTC Signaling Message Received:", receivedMessage);
+          }
         } catch (error) {
-          console.error("❌ Error parsing message, treating as plain text:", error);
-          
-          const textMessage = event.data instanceof Blob ? await event.data.text() : event.data;
-          setMessages((prevMessages) => [
-            ...prevMessages,
-            { sender: "Stranger", text: textMessage },
-          ]);
+          console.error("❌ Error parsing message:", error);
         }
       };
 
+      socketRef.current.onerror = (error) => console.error("WebSocket Error:", error);
       socketRef.current.onclose = () => console.log("❌ WebSocket disconnected");
 
-      return () => {
-        if (socketRef.current) {
-          socketRef.current.close();
-        }
-      };
+      return () => socketRef.current?.close();
     }
   }, [chatStarted]);
 
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
+    chatContainerRef.current?.scrollTo({ top: chatContainerRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  useEffect(() => {
-    const handleScroll = () => {
-      if (!footerRef.current || !videoButtonRef.current) return;
-      const footerTop = footerRef.current.getBoundingClientRect().top;
-      const windowHeight = window.innerHeight;
-
-      setButtonBottom(footerTop < windowHeight - 50 ? `${windowHeight - footerTop + 20}px` : "20px");
-    };
-
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
-
   const startChat = () => {
-    if (name.trim() !== "") {
+    if (name.trim()) {
       setChatStarted(true);
     }
   };
 
   const sendMessage = () => {
-    if (newMessage.trim() !== "" && socketRef.current) {
-      const messageData = { sender: `${name} (you)`, text: newMessage };
+    if (!newMessage.trim()) return;
+
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      console.error("❌ Cannot send message - WebSocket not open.");
+      return;
+    }
+
+    if (!userIDRef.current) {
+      console.error("⏳ Waiting for userID from server. Retrying in 500ms...");
+      setTimeout(sendMessage, 500);
+      return;
+    }
+
+    const messageData = {
+      type: "chat",
+      senderID: userIDRef.current,
+      senderName: name,
+      text: newMessage,
+    };
+
+    console.log("📤 Sending Message:", messageData);
+
+    try {
       socketRef.current.send(JSON.stringify(messageData));
       setMessages((prevMessages) => [...prevMessages, messageData]);
       setNewMessage("");
+    } catch (error) {
+      console.error("❌ Error sending message:", error);
     }
   };
 
@@ -153,19 +162,15 @@ const Chat = () => {
                     style={{
                       width: "fit-content",
                       maxWidth: "80%",
-                      alignSelf: msg.sender.includes("(you)")
-                        ? "flex-end"
-                        : "flex-start",
-                      backgroundColor: msg.sender.includes("(you)")
-                        ? "#198754"
-                        : "#0d6efd",
+                      alignSelf: msg.senderID === userIDRef.current ? "flex-end" : "flex-start",
+                      backgroundColor: msg.senderID === userIDRef.current ? "#198754" : "#0d6efd",
                       color: "#ffffff",
                       padding: "10px",
                       borderRadius: "12px",
                       fontSize: "14px",
                     }}
                   >
-                    <strong>{msg.sender}:</strong> {msg.text}
+                    <strong>{msg.senderID === userIDRef.current ? "You" : msg.senderName}:</strong> {msg.text}
                   </div>
                 ))}
               </div>
@@ -181,39 +186,14 @@ const Chat = () => {
                 <Button variant="primary" onClick={sendMessage}>
                   <FaPaperPlane />
                 </Button>
+                <Button variant="success" className="ms-2">
+                  <FaVideo />
+                </Button>
               </InputGroup>
-
-              <Button variant="success" className="mt-3 w-100">
-                Skip to next
-              </Button>
             </Col>
           </Row>
         )}
       </Container>
-
-      {chatStarted && (
-        <Button
-          ref={videoButtonRef}
-          variant="success"
-          className="video-call-button"
-          style={{
-            position: "fixed",
-            bottom: buttonBottom,
-            right: "20px",
-            zIndex: 1000,
-            borderRadius: "50%",
-            width: "50px",
-            height: "50px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <FaVideo size={20} />
-        </Button>
-      )}
-
-      <div ref={footerRef} style={{ position: "absolute", bottom: 0, width: "100%", height: "1px" }} />
     </div>
   );
 };
