@@ -14,7 +14,7 @@ const Chat = () => {
   const videoButtonRef = useRef(null);
   const footerRef = useRef(null);
   const [buttonBottom, setButtonBottom] = useState("20px");
-  const socketRef = useRef(null); // WebSocket instance
+  const socketRef = useRef(null);
 
   useEffect(() => {
     if (chatStarted) {
@@ -22,18 +22,28 @@ const Chat = () => {
 
       socketRef.current.onopen = () => console.log("✅ Connected to WebSocket Server");
 
-      socketRef.current.onmessage = (event) => {
+      socketRef.current.onmessage = async (event) => {
         try {
-          const receivedMessage = JSON.parse(event.data);
+          let receivedMessage;
+          
+          if (event.data instanceof Blob) {
+            const textData = await event.data.text();
+            receivedMessage = JSON.parse(textData);
+          } else {
+            receivedMessage = JSON.parse(event.data);
+          }
+
           setMessages((prevMessages) => [
             ...prevMessages,
             { sender: receivedMessage.sender || "Stranger", text: receivedMessage.text },
           ]);
         } catch (error) {
           console.error("❌ Error parsing message, treating as plain text:", error);
+          
+          const textMessage = event.data instanceof Blob ? await event.data.text() : event.data;
           setMessages((prevMessages) => [
             ...prevMessages,
-            { sender: "Stranger", text: event.data },
+            { sender: "Stranger", text: textMessage },
           ]);
         }
       };
@@ -49,7 +59,6 @@ const Chat = () => {
   }, [chatStarted]);
 
   useEffect(() => {
-    // Auto-scroll to the latest message
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
@@ -61,11 +70,7 @@ const Chat = () => {
       const footerTop = footerRef.current.getBoundingClientRect().top;
       const windowHeight = window.innerHeight;
 
-      if (footerTop < windowHeight - 50) {
-        setButtonBottom(`${windowHeight - footerTop + 20}px`);
-      } else {
-        setButtonBottom("20px");
-      }
+      setButtonBottom(footerTop < windowHeight - 50 ? `${windowHeight - footerTop + 20}px` : "20px");
     };
 
     window.addEventListener("scroll", handleScroll);
@@ -81,8 +86,9 @@ const Chat = () => {
   const sendMessage = () => {
     if (newMessage.trim() !== "" && socketRef.current) {
       const messageData = { sender: `${name} (you)`, text: newMessage };
-      socketRef.current.send(JSON.stringify(messageData)); // Send JSON
-      setNewMessage(""); // Clear input field
+      socketRef.current.send(JSON.stringify(messageData));
+      setMessages((prevMessages) => [...prevMessages, messageData]);
+      setNewMessage("");
     }
   };
 
@@ -128,7 +134,6 @@ const Chat = () => {
             >
               <h2 className="text-center">Anonymous Chat</h2>
 
-              {/* Chat Box */}
               <div
                 ref={chatContainerRef}
                 className="chat-box p-3 rounded mt-3"
@@ -152,8 +157,8 @@ const Chat = () => {
                         ? "flex-end"
                         : "flex-start",
                       backgroundColor: msg.sender.includes("(you)")
-                        ? "#198754" // Green for user messages
-                        : "#0d6efd", // Blue for Stranger messages
+                        ? "#198754"
+                        : "#0d6efd",
                       color: "#ffffff",
                       padding: "10px",
                       borderRadius: "12px",
@@ -165,7 +170,6 @@ const Chat = () => {
                 ))}
               </div>
 
-              {/* Input field with send button */}
               <InputGroup className="mt-3">
                 <Form.Control
                   type="text"
@@ -173,19 +177,12 @@ const Chat = () => {
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyDown={handleKeyPress}
-                  style={{
-                    backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
-                    color: theme === "dark" ? "#ffffff" : "#333333",
-                    border: theme === "dark" ? "1px solid #444" : "1px solid #ccc",
-                    transition: "background-color 0.3s ease, color 0.3s ease",
-                  }}
                 />
                 <Button variant="primary" onClick={sendMessage}>
                   <FaPaperPlane />
                 </Button>
               </InputGroup>
 
-              {/* Next Button */}
               <Button variant="success" className="mt-3 w-100">
                 Skip to next
               </Button>
@@ -194,7 +191,6 @@ const Chat = () => {
         )}
       </Container>
 
-      {/* Floating Video Button (Now on Bottom Right) */}
       {chatStarted && (
         <Button
           ref={videoButtonRef}
@@ -217,18 +213,7 @@ const Chat = () => {
         </Button>
       )}
 
-      {/* Footer Reference */}
-      <div
-        ref={footerRef}
-        style={{
-          position: "absolute",
-          bottom: 0,
-          width: "100%",
-          height: "1px",
-          backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa",
-          transition: "background-color 0.3s ease",
-        }}
-      />
+      <div ref={footerRef} style={{ position: "absolute", bottom: 0, width: "100%", height: "1px" }} />
     </div>
   );
 };
