@@ -31,18 +31,16 @@ server.on("connection", (socket) => {
 
     // Handling incoming messages
     socket.on("message", (message) => {
-        const partner = pairs.get(socket);
-        if (partner && partner.readyState === WebSocket.OPEN) {
-            try {
-                // Convert Buffer to string if needed
-                const textMessage = message.toString("utf-8"); 
-                const parsedMessage = JSON.parse(textMessage);
-    
-                // Send as a string, ensuring no binary data is sent
+        try {
+            const textMessage = message.toString("utf-8");
+            const parsedMessage = JSON.parse(textMessage);
+
+            const partner = pairs.get(socket);
+            if (partner && partner.readyState === WebSocket.OPEN) {
                 partner.send(JSON.stringify(parsedMessage));
-            } catch (error) {
-                console.error("❌ Error parsing message:", error);
             }
+        } catch (error) {
+            console.error("❌ Error parsing message:", error);
         }
     });
 
@@ -51,16 +49,31 @@ server.on("connection", (socket) => {
         console.log("❌ Client disconnected");
 
         const partner = pairs.get(socket);
-        
+        pairs.delete(socket);
+
         if (partner && partner.readyState === WebSocket.OPEN) {
-            partner.send(JSON.stringify({ sender: "System", text: "Your chat partner has left. You will be reconnected soon." }));
-            waitingUser = partner; // Reassign the remaining user to the queue
+            partner.send(JSON.stringify({ sender: "System", text: "Your chat partner has left. Finding a new match..." }));
+
+            // If there's no waiting user, make them wait; otherwise, pair them instantly
+            if (!waitingUser) {
+                waitingUser = partner;
+                partner.send(JSON.stringify({ sender: "System", text: "Waiting for a new chat partner..." }));
+            } else {
+                // Pair with the next waiting user
+                const newPartner = waitingUser;
+                pairs.set(partner, newPartner);
+                pairs.set(newPartner, partner);
+                waitingUser = null;
+
+                const message = JSON.stringify({ sender: "System", text: "You are now connected to a new chat partner!" });
+                partner.send(message);
+                newPartner.send(message);
+            }
         } else {
-            waitingUser = null; // No one is left waiting
+            waitingUser = null; // Ensure no orphaned waiting users
         }
 
-        pairs.delete(socket);
-        if (partner) pairs.delete(partner); // Ensure both are removed properly
+        if (partner) pairs.delete(partner);
     });
 
     // Handling errors
