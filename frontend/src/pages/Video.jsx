@@ -1,6 +1,8 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useContext } from "react";
+import { ThemeContext } from "../components/ThemeContext"; // Import ThemeContext
 
 const Video = () => {
+  const { theme } = useContext(ThemeContext);
   const [username, setUsername] = useState("");
   const [nameConfirmed, setNameConfirmed] = useState(false);
   const [callStarted, setCallStarted] = useState(false);
@@ -40,7 +42,7 @@ const Video = () => {
   // Toggle Mute
   const toggleMute = () => {
     if (streamRef.current) {
-      streamRef.current.getAudioTracks().forEach(track => (track.enabled = muted));
+      streamRef.current.getAudioTracks().forEach((track) => (track.enabled = muted));
     }
     setMuted(!muted);
   };
@@ -48,7 +50,7 @@ const Video = () => {
   // Toggle Video
   const toggleVideo = () => {
     if (streamRef.current) {
-      streamRef.current.getVideoTracks().forEach(track => (track.enabled = !videoEnabled));
+      streamRef.current.getVideoTracks().forEach((track) => (track.enabled = !videoEnabled));
     }
     setVideoEnabled(!videoEnabled);
   };
@@ -56,7 +58,7 @@ const Video = () => {
   // End Call
   const endCall = () => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach((track) => track.stop());
     }
     setCallStarted(false);
     setNameConfirmed(false);
@@ -64,149 +66,172 @@ const Video = () => {
   };
 
   return (
-    <div style={styles.container}>
+    <div
+      style={{
+        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa",
+        color: theme === "dark" ? "#ffffff" : "#333333",
+        minHeight: "100vh",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        flexDirection: "column",
+        padding: "20px",
+        position: "relative",
+      }}
+    >
       {/* Name Selection */}
       {!nameConfirmed ? (
-        <div style={styles.nameSelection}>
-          <h2 style={styles.heading}>Anonymous Video Call</h2>
+        <div
+          style={{
+            backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
+            padding: "25px",
+            borderRadius: "10px",
+            textAlign: "center",
+            width: "400px",
+            boxShadow: theme === "dark"
+              ? "0px 4px 10px rgba(255, 255, 255, 0.2)"
+              : "0px 4px 10px rgba(0, 0, 0, 0.2)",
+          }}
+        >
+          <h2 style={{ color: theme === "dark" ? "#ffffff" : "#222222" }}>
+            Anonymous Video Call
+          </h2>
           <input
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder="Choose a name"
-            style={styles.input}
+            style={{
+              width: "100%",
+              padding: "12px",
+              borderRadius: "5px",
+              border: "1px solid #ccc",
+              fontSize: "16px",
+              textAlign: "center",
+              outline: "none",
+              backgroundColor: theme === "dark" ? "#333" : "#fff",
+              color: theme === "dark" ? "#ffffff" : "#222",
+            }}
           />
           <button
             onClick={() => setNameConfirmed(username.trim() !== "")}
-            style={styles.startButton}
+            style={startButtonStyle}
           >
             Start Video
           </button>
         </div>
       ) : !callStarted ? (
-        <div style={styles.callScreen}>
+        <div style={{ textAlign: "center" }}>
           <h2>Anonymous Video Call</h2>
-          <button onClick={startVideoCall} style={styles.startButton}>
-            Start Video Call
-          </button>
-          <button onClick={endCall} style={styles.nextButton}>
-            Next
-          </button>
+          <button onClick={startVideoCall} style={startButtonStyle}>Start Video Call</button>
         </div>
       ) : (
-        <div style={styles.videoCallBox}>
+        <div style={{ textAlign: "center" }}>
           <h2>Anonymous Video Call</h2>
-          <div style={styles.videoContainer}>
-            <video ref={userVideoRef} autoPlay muted playsInline style={styles.video} />
-            <video ref={strangerVideoRef} autoPlay playsInline style={styles.video} />
+          <div style={{ display: "flex", justifyContent: "center", gap: "10px", marginBottom: "10px" }}>
+            <video ref={userVideoRef} autoPlay muted playsInline style={videoStyle} />
+            <video ref={strangerVideoRef} autoPlay playsInline style={videoStyle} />
           </div>
-          <div style={styles.controls}>
-            <button onClick={toggleMute} style={styles.controlButton}>
-              {muted ? "Unmute" : "Mute"}
+          {/* Control Buttons */}
+          <div style={{ display: "flex", justifyContent: "center", gap: "15px" }}>
+            <button onClick={toggleMute} style={emojiButtonStyle}>
+              <span className="material-icons">{muted ? "mic_off" : "mic"}</span>
             </button>
-            <button onClick={toggleVideo} style={styles.controlButton}>
-              {videoEnabled ? "Disable Video" : "Enable Video"}
+
+            <button onClick={toggleVideo} style={emojiButtonStyle}>
+              <span className="material-icons">{videoEnabled ? "videocam" : "videocam_off"}</span>
             </button>
-            <button onClick={endCall} style={styles.endButton}>End</button>
-            <button onClick={endCall} style={styles.nextButton}>Next</button>
+
+            <button onClick={endCall} style={endButtonStyle}>
+              <span className="material-icons">call_end</span>
+            </button>
+          </div>
+          {/* Skip to Next Button */}
+          <div style={{ marginTop: "10px" }}>
+            <button onClick={endCall} style={skipButtonStyle}>Skip to Next</button>
           </div>
         </div>
       )}
+
+      {/* Message Image in Bottom Right */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: "20px",
+          right: "20px",
+          width: "50px", // Adjust size of the image
+          height: "50px",
+          cursor: "pointer",
+        }}
+      >
+        <img
+          src="/msg.png" // Replace with the correct path to your image
+          alt="Message"
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
+      </div>
     </div>
   );
 };
 
 /* Styles */
-const styles = {
-  container: {
-    backgroundColor: "#222",
-    color: "#fff",
-    minHeight: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    flexDirection: "column",
-  },
-  nameSelection: {
-    backgroundColor: "#1e1e1e",
-    padding: "25px",
-    borderRadius: "10px",
-    textAlign: "center",
-    width: "400px",
-    boxShadow: "0px 4px 10px rgba(0, 0, 0, 0.2)",
-  },
-  heading: {
-    color: "#fff",
-    fontSize: "24px",
-    marginBottom: "15px",
-  },
-  input: {
-    width: "100%",
-    padding: "12px",
-    borderRadius: "5px",
-    border: "none",
-    fontSize: "16px",
-    textAlign: "center",
-    outline: "none",
-  },
-  startButton: {
-    width: "100%",
-    padding: "12px",
-    backgroundColor: "#198754",
-    color: "#fff",
-    border: "none",
-    borderRadius: "5px",
-    cursor: "pointer",
-    fontSize: "16px",
-    marginTop: "10px",
-  },
-  callScreen: {
-    textAlign: "center",
-  },
-  videoCallBox: {
-    textAlign: "center",
-  },
-  videoContainer: {
-    display: "flex",
-    justifyContent: "center",
-    gap: "10px",
-    marginBottom: "10px",
-  },
-  video: {
-    width: "300px",
-    height: "200px",
-    backgroundColor: "#000",
-    borderRadius: "10px",
-  },
-  controls: {
-    display: "flex",
-    justifyContent: "center",
-    gap: "10px",
-  },
-  controlButton: {
-    padding: "10px",
-    backgroundColor: "#007bff",
-    color: "#fff",
-    border: "none",
-    borderRadius: "5px",
-    cursor: "pointer",
-  },
-  endButton: {
-    padding: "10px",
-    backgroundColor: "red",
-    color: "#fff",
-    border: "none",
-    borderRadius: "5px",
-    cursor: "pointer",
-  },
-  nextButton: {
-    padding: "10px",
-    backgroundColor: "#6c757d",
-    color: "#fff",
-    border: "none",
-    borderRadius: "5px",
-    cursor: "pointer",
-  },
+const videoStyle = {
+  width: "600px", // Increased size
+  height: "400px",
+  backgroundColor: "#000",
+  borderRadius: "10px",
+};
+
+const emojiButtonStyle = {
+  width: "80px",  // Bigger button size
+  height: "80px",
+  fontSize: "40px", // Bigger emoji size
+  backgroundColor: "#007bff",
+  color: "#fff",
+  border: "none",
+  borderRadius: "50%",
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const endButtonStyle = {
+  ...emojiButtonStyle,
+  backgroundColor: "red",
+};
+
+const skipButtonStyle = {
+  padding: "12px 24px",
+  backgroundColor: "#6c757d",
+  color: "#fff",
+  border: "none",
+  borderRadius: "5px",
+  cursor: "pointer",
+  fontSize: "18px",
+  marginTop: "10px",
+};
+
+const startButtonStyle = {
+  width: "100%",
+  padding: "12px",
+  backgroundColor: "#198754",
+  color: "#fff",
+  border: "none",
+  borderRadius: "5px",
+  cursor: "pointer",
+  fontSize: "16px",
+  marginTop: "10px",
+};
+
+const nextButtonStyle = {
+  padding: "10px",
+  backgroundColor: "#6c757d",
+  color: "#fff",
+  border: "none",
+  borderRadius: "5px",
+  cursor: "pointer",
+  marginLeft: "10px",
 };
 
 export default Video;
