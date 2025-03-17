@@ -10,54 +10,83 @@ const Chat = () => {
   const [chatStarted, setChatStarted] = useState(false);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
+  const [userMap, setUserMap] = useState({}); // Store user ID → name mapping
   const userIDRef = useRef(null);
   const chatContainerRef = useRef(null);
   const socketRef = useRef(null);
+  const reconnectInterval = useRef(null);
 
   useEffect(() => {
     if (chatStarted) {
-      socketRef.current = new WebSocket("ws://localhost:8080");
-
-      socketRef.current.onopen = () => {
-        console.log("✅ Connected to WebSocket Server");
-        socketRef.current.send(JSON.stringify({ type: "register", name }));
-      };
-
-      socketRef.current.onmessage = async (event) => {
-        try {
-          let receivedMessage = event.data instanceof Blob 
-            ? JSON.parse(await event.data.text()) 
-            : JSON.parse(event.data);
-
-          console.log("📩 Message from Server:", receivedMessage);
-
-          if (receivedMessage.type === "userID") {
-            userIDRef.current = receivedMessage.userID;
-            console.log("✅ UserID Received & Stored:", userIDRef.current);
-          } else if (receivedMessage.type === "chat") {
-            setMessages((prevMessages) => [
-              ...prevMessages,
-              {
-                senderID: receivedMessage.senderID,
-                senderName: receivedMessage.senderName,
-                text: receivedMessage.text,
-              },
-            ]);
-          } else if (["offer", "answer", "candidate"].includes(receivedMessage.type)) {
-            // Handle WebRTC messages (to be integrated with video call functionality)
-            console.log("📡 WebRTC Signaling Message Received:", receivedMessage);
-          }
-        } catch (error) {
-          console.error("❌ Error parsing message:", error);
-        }
-      };
-
-      socketRef.current.onerror = (error) => console.error("WebSocket Error:", error);
-      socketRef.current.onclose = () => console.log("❌ WebSocket disconnected");
-
-      return () => socketRef.current?.close();
+      connectWebSocket();
     }
+    return () => disconnectWebSocket();
   }, [chatStarted]);
+
+  const connectWebSocket = () => {
+    socketRef.current = new WebSocket("ws://localhost:8080");
+
+    socketRef.current.onopen = () => {
+      console.log("✅ Connected to WebSocket Server");
+      socketRef.current.send(JSON.stringify({ type: "register", name }));
+    };
+
+    socketRef.current.onmessage = async (event) => {
+      try {
+        let receivedMessage =
+          event.data instanceof Blob ? JSON.parse(await event.data.text()) : JSON.parse(event.data);
+
+        console.log("📩 Message from Server:", receivedMessage);
+
+        if (receivedMessage.type === "userID") {
+          userIDRef.current = receivedMessage.userID;
+          console.log("✅ UserID Received & Stored:", userIDRef.current);
+        } else if (receivedMessage.type === "chat") {
+          setUserMap((prevUserMap) => ({
+            ...prevUserMap,
+            [receivedMessage.senderID]: receivedMessage.senderName,
+          }));
+
+          setMessages((prevMessages) => [
+            ...prevMessages,
+            {
+              senderID: receivedMessage.senderID,
+              senderName: receivedMessage.senderName,
+              text: receivedMessage.text,
+            },
+          ]);
+        }
+      } catch (error) {
+        console.error("❌ Error parsing message:", error);
+      }
+    };
+
+    socketRef.current.onerror = (error) => console.error("⚠️ WebSocket Error:", error);
+
+    socketRef.current.onclose = () => {
+      console.log("❌ WebSocket disconnected. Attempting to reconnect...");
+      attemptReconnect();
+    };
+  };
+
+  const disconnectWebSocket = () => {
+    if (socketRef.current) {
+      socketRef.current.close();
+      socketRef.current = null;
+    }
+    clearInterval(reconnectInterval.current);
+  };
+
+  const attemptReconnect = () => {
+    reconnectInterval.current = setInterval(() => {
+      if (!socketRef.current || socketRef.current.readyState === WebSocket.CLOSED) {
+        console.log("🔄 Reconnecting WebSocket...");
+        connectWebSocket();
+      } else {
+        clearInterval(reconnectInterval.current);
+      }
+    }, 3000);
+  };
 
   useEffect(() => {
     chatContainerRef.current?.scrollTo({ top: chatContainerRef.current.scrollHeight, behavior: "smooth" });
@@ -86,7 +115,7 @@ const Chat = () => {
     const messageData = {
       type: "chat",
       senderID: userIDRef.current,
-      senderName: name,
+      senderName: name, // Send the name along with the message
       text: newMessage,
     };
 
@@ -98,6 +127,15 @@ const Chat = () => {
       setNewMessage("");
     } catch (error) {
       console.error("❌ Error sending message:", error);
+    }
+  };
+
+  const startVideoCall = () => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      console.log("📹 Starting Video Call...");
+      socketRef.current.send(JSON.stringify({ type: "start_video_call" }));
+    } else {
+      console.error("❌ WebSocket not connected for video call.");
     }
   };
 
@@ -170,23 +208,23 @@ const Chat = () => {
                       fontSize: "14px",
                     }}
                   >
-                    <strong>{msg.senderID === userIDRef.current ? "You" : msg.senderName}:</strong> {msg.text}
+                    <strong>
+                      {msg.senderID === userIDRef.current
+                        ? `${name} (you)`
+                        : userMap[msg.senderID] || "Unknown User"}
+                      :
+                    </strong>{" "}
+                    {msg.text}
                   </div>
                 ))}
               </div>
 
               <InputGroup className="mt-3">
-                <Form.Control
-                  type="text"
-                  placeholder="Type a message..."
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyDown={handleKeyPress}
-                />
+                <Form.Control type="text" placeholder="Type a message..." value={newMessage} onChange={(e) => setNewMessage(e.target.value)} onKeyDown={handleKeyPress} />
                 <Button variant="primary" onClick={sendMessage}>
                   <FaPaperPlane />
                 </Button>
-                <Button variant="success" className="ms-2">
+                <Button variant="success" className="ms-2" onClick={startVideoCall}>
                   <FaVideo />
                 </Button>
               </InputGroup>
