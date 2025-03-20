@@ -2,10 +2,10 @@ import React, { useContext } from "react";
 import { Container, Row, Col, Card, Button } from "react-bootstrap";
 import { FaUsers, FaShieldAlt, FaRocket, FaCheckCircle, FaArrowLeft, FaBell } from "react-icons/fa";
 import { Link } from "react-router-dom";
-import { ThemeContext } from "../components/ThemeContext"; // Correct import
+import { ThemeContext } from "../components/ThemeContext"; 
 
 const About = () => {
-  const { theme } = useContext(ThemeContext); // Get theme state
+  const { theme } = useContext(ThemeContext); 
 
   return (
     <div
@@ -14,8 +14,8 @@ const About = () => {
         borderBottom: theme === "dark" ? "0.5px solid rgba(255, 255, 255, 0.2)" : "0.5px solid rgba(0, 0, 0, 0.2)",
         paddingBottom: "60px",
         textAlign: "center",
-        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa", // Dark/Light Background
-        color: theme === "dark" ? "#ffffff" : "#333333", // Dark/Light Text Color
+        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa", 
+        color: theme === "dark" ? "#ffffff" : "#333333", 
       }}
     >
       <Container>
@@ -50,7 +50,6 @@ const About = () => {
             </Card>
           </Col>
 
-          {/* Why Choose Us - Single Column */}
           <Col md={12} className="mb-4">
             <Card
               style={{
@@ -69,7 +68,7 @@ const About = () => {
             </Card>
           </Col>
 
-          {/* Key Features - Single Column */}
+         
           <Col md={12} className="mb-4">
             <Card
               style={{
@@ -107,7 +106,7 @@ const About = () => {
             </Card>
           </Col>
 
-          {/* Vision - Single Column */}
+        
           <Col md={12} className="mb-4">
             <Card
               style={{
@@ -127,13 +126,13 @@ const About = () => {
           </Col>
         </Row>
 
-        {/* Notification */}
+       
         <p className="fs-5 mt-4" style={{ color: theme === "dark" ? "#bbbbbb" : "#555555" }}>
           <FaBell className="text-warning me-2" />
           Join TextAnon today and experience true anonymity!
         </p>
 
-        {/* Back to Home Button */}
+       
         <Link to="/">
           <Button
             variant={theme === "dark" ? "success" : "outline-success"}

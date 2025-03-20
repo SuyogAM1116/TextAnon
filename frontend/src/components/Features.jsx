@@ -1,34 +1,34 @@
 import React, { useContext } from "react";
 import { Container, Row, Col } from "react-bootstrap";
 import { FaShieldAlt, FaUserSecret, FaClock } from "react-icons/fa";
-import { ThemeContext } from "../components/ThemeContext"; // Import ThemeContext
+import { ThemeContext } from "../components/ThemeContext";
 
 const Features = () => {
-  const { theme } = useContext(ThemeContext); // Get theme from context
+  const { theme } = useContext(ThemeContext); 
 
   const featureCardStyle = {
-    backgroundColor: theme === "dark" ? "rgba(83, 82, 91, 0.7)" : "#ffffff", // Dark/Light Background
-    borderRadius: "15px", // Rounded corners
-    padding: "30px", // Increased padding for better spacing
-    height: "250px", // Increased height for better content fitting
+    backgroundColor: theme === "dark" ? "rgba(83, 82, 91, 0.7)" : "#ffffff", 
+    borderRadius: "15px", 
+    padding: "30px", 
+    height: "250px", 
     boxShadow: theme === "dark" 
       ? "0 4px 10px rgba(255, 255, 255, 0.1)" 
-      : "0 4px 10px rgba(0, 0, 0, 0.1)", // Adjusted shadow for themes
+      : "0 4px 10px rgba(0, 0, 0, 0.1)", 
     transition: "transform 0.3s ease, box-shadow 0.3s ease",
-    border: theme === "dark" ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid #ddd", // Dark/Light Border
+    border: theme === "dark" ? "1px solid rgba(255, 255, 255, 0.2)" : "1px solid #ddd", 
     textAlign: "center",
     display: "flex",
     flexDirection: "column",
     justifyContent: "center",
     alignItems: "center",
-    color: theme === "dark" ? "#ffffff" : "#333333", // Dark/Light Text Color
+    color: theme === "dark" ? "#ffffff" : "#333333", 
   };
 
   return (
     <div
       style={{
         padding: "80px 0",
-        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa", // Dark/Light Background
+        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa", 
       }}
     >
       <Container>

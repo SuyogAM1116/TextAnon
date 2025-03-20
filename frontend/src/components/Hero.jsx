@@ -3,10 +3,10 @@ import { Container, Row, Col, Button } from "react-bootstrap";
 import Lottie from "lottie-react";
 import animationData from "../assets/video-marketing.json";
 import { Link } from "react-router-dom";
-import { ThemeContext } from "../components/ThemeContext"; // Import ThemeContext
+import { ThemeContext } from "../components/ThemeContext"; 
 
 const Hero = () => {
-  const { theme } = useContext(ThemeContext); // Get theme from context
+  const { theme } = useContext(ThemeContext); 
 
   return (
     <div
@@ -15,12 +15,12 @@ const Hero = () => {
         borderBottom: theme === "dark" ? "0.5px solid rgba(255, 255, 255, 0.2)" : "0.5px solid rgba(0, 0, 0, 0.2)",
         paddingBottom: "60px",
         textAlign: "center",
-        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa", // Dark/Light Background
-        color: theme === "dark" ? "#ffffff" : "#333333", // Dark/Light Text Color
+        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa",
+        color: theme === "dark" ? "#ffffff" : "#333333", 
       }}
     >
       <Container>
-        {/* Logo with Dynamic Theme Colors */}
+        
         <h1 className="fw-bold" style={{ fontSize: "3.5rem" }}>
           <span className="text-primary">Text</span>
           <span className="text-success">Anon</span>
@@ -49,13 +49,13 @@ const Hero = () => {
               <div className="d-grid gap-3">
                 <Link to="/chat">
                   <Button
-                    variant="success" // Retained Success (Green) Button in Both Themes
+                    variant="success" 
                     size="lg"
                     className="fw-bold"
                     style={{
                       width: "100%",
                       padding: "14px",
-                      border: "2px solid #198754", // Fixed Green Border
+                      border: "2px solid #198754", 
                       color: "#fff",
                     }}
                   >
@@ -64,13 +64,13 @@ const Hero = () => {
                 </Link>
                 <Link to="/video">
                   <Button
-                    variant="primary" // Retained Primary (Blue) Button in Both Themes
+                    variant="primary" 
                     size="lg"
                     className="fw-bold"
                     style={{
                       width: "100%",
                       padding: "14px",
-                      border: "2px solid #0d6efd", // Fixed Blue Border
+                      border: "2px solid #0d6efd", 
                       color: "#fff",
                     }}
                   >

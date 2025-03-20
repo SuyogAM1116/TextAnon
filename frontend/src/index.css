@@ -1,7 +1,7 @@
 #root {
-  width: 100%;  /* Ensures full width */
-  max-width: none; /* Remove max width limit */
-  margin: 0; /* Remove auto margin */
+  width: 100%;  
+  max-width: none; 
+  margin: 0; 
   padding: 0;
   text-align: center;
 }

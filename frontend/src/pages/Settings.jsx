@@ -24,7 +24,6 @@ const Settings = () => {
     >
       <h2>Settings</h2>
 
-      {/* General Settings */}
       <div style={sectionStyle(theme)}>
         <h3>General</h3>
         <label style={optionStyle}>
@@ -33,7 +32,7 @@ const Settings = () => {
             variant={darkModeEnabled ? "danger" : "success"}
             onClick={() => {
               setDarkModeEnabled(!darkModeEnabled);
-              if (!darkModeEnabled) setTheme("dark"); // Enable with Dark Mode by default
+              if (!darkModeEnabled) setTheme("dark");
             }}
           >
             {darkModeEnabled ? "Disable" : "Enable"}
@@ -41,7 +40,6 @@ const Settings = () => {
         </label>
       </div>
 
-      {/* Message & Chat Settings */}
       <div style={sectionStyle(theme)}>
         <h3>Message and Chat</h3>
 
@@ -93,7 +91,6 @@ const Settings = () => {
         </label>
       </div>
 
-      {/* Video Call Settings */}
       <div style={sectionStyle(theme)}>
         <h3>Video Call</h3>
         <label style={optionStyle}>
@@ -114,7 +111,6 @@ const Settings = () => {
         </label>
       </div>
 
-      {/* Back to Home Button */}
       <Link to="/">
         <Button
           variant={theme === "dark" ? "success" : "outline-success"}

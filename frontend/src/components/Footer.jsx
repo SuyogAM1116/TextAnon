@@ -6,13 +6,11 @@ const Footer = () => {
   return (
     <Container fluid className="footer bg-dark text-white py-4">
       <Row className="text-center text-md-start">
-        {/* Brand Info */}
         <Col xs={12} md={3} className="mb-3">
           <h5 className="fw-bold">TextAnon</h5>
           <p>Secure & private anonymous communication.</p>
         </Col>
 
-        {/* Quick Links */}
         <Col xs={6} md={3} className="mb-3">
           <h6 className="fw-bold">Explore More</h6>
           <ul className="list-unstyled">
@@ -21,7 +19,6 @@ const Footer = () => {
           </ul>
         </Col>
 
-        {/* Resources */}
         <Col xs={6} md={3} className="mb-3">
           <h6 className="fw-bold">Resources</h6>
           <ul className="list-unstyled">
@@ -32,7 +29,6 @@ const Footer = () => {
           </ul>
         </Col>
 
-        {/* Social Media */}
         <Col xs={12} md={3} className="mb-3">
           <h6 className="fw-bold">Follow Us</h6>
           <a href="https://facebook.com" className="text-white me-3 text-decoration-none">
@@ -49,7 +45,6 @@ const Footer = () => {
         </Col>
       </Row>
 
-      {/* Copyright */}
       <Row className="text-center mt-3">
         <Col>
           <p className="mb-0">© 2025 TextAnon. All Rights Reserved.</p>

@@ -2,25 +2,25 @@ import React, { useContext } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "react-bootstrap";
 import { FaLock, FaArrowLeft, FaShieldAlt, FaUserSecret, FaEyeSlash, FaBomb, FaBan, FaVideo } from "react-icons/fa";
-import { ThemeContext } from "../components/ThemeContext"; // Import ThemeContext
+import { ThemeContext } from "../components/ThemeContext"; 
 
 const Privacy = () => {
-  const { theme } = useContext(ThemeContext); // Get theme state
+  const { theme } = useContext(ThemeContext); 
 
-  // Inline styles for scoped styling
+ 
   const styles = {
     page: {
       width: "100%",
-      minHeight: "100vh", // Full viewport height
-      backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa", // Dark/Light Background
-      color: theme === "dark" ? "#f1f1f1" : "#333", // Dark/Light Text Color
+      minHeight: "100vh", 
+      backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa", 
+      color: theme === "dark" ? "#f1f1f1" : "#333", 
       display: "flex",
       justifyContent: "center",
       alignItems: "center",
       textAlign: "center",
       flexDirection: "column",
-      paddingTop: "10px", // Prevent overlap with Navbar
-      paddingBottom: "60px", // Prevent overlap with Footer
+      paddingTop: "10px", 
+      paddingBottom: "60px",
     },
     container: {
       width: "90%",
@@ -42,7 +42,7 @@ const Privacy = () => {
       padding: "15px",
       margin: "15px auto",
       borderRadius: "8px",
-      borderLeft: `5px solid ${theme === "dark" ? "#007bff" : "#0d6efd"}`, // Blue left border
+      borderLeft: `5px solid ${theme === "dark" ? "#007bff" : "#0d6efd"}`, 
       textAlign: "left",
       color: theme === "dark" ? "#f1f1f1" : "#212529",
       boxShadow: theme === "dark"
@@ -139,7 +139,6 @@ const Privacy = () => {
           Your safety matters! Use strong passwords and never share sensitive info online.
         </p>
 
-        {/* Back to Home Button */}
         <Link to="/">
           <Button
             variant={theme === "dark" ? "success" : "outline-success"}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useContext } from "react";
-import { ThemeContext } from "../components/ThemeContext"; // Import ThemeContext
+import { ThemeContext } from "../components/ThemeContext"; 
 
 const Video = () => {
   const { theme } = useContext(ThemeContext);
@@ -12,8 +12,7 @@ const Video = () => {
   const userVideoRef = useRef(null);
   const strangerVideoRef = useRef(null);
   const streamRef = useRef(null);
-
-  // Start Video Call
+l
   const startVideoCall = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -26,7 +25,7 @@ const Video = () => {
         userVideoRef.current.srcObject = stream;
       }
 
-      // Simulate stranger video (for testing)
+
       setTimeout(() => {
         if (strangerVideoRef.current) {
           strangerVideoRef.current.srcObject = stream;
@@ -39,7 +38,7 @@ const Video = () => {
     }
   };
 
-  // Toggle Mute
+
   const toggleMute = () => {
     if (streamRef.current) {
       streamRef.current.getAudioTracks().forEach((track) => (track.enabled = muted));
@@ -47,7 +46,7 @@ const Video = () => {
     setMuted(!muted);
   };
 
-  // Toggle Video
+
   const toggleVideo = () => {
     if (streamRef.current) {
       streamRef.current.getVideoTracks().forEach((track) => (track.enabled = !videoEnabled));
@@ -55,7 +54,7 @@ const Video = () => {
     setVideoEnabled(!videoEnabled);
   };
 
-  // End Call
+
   const endCall = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -79,7 +78,7 @@ const Video = () => {
         position: "relative",
       }}
     >
-      {/* Name Selection */}
+
       {!nameConfirmed ? (
         <div
           style={{
@@ -146,26 +145,26 @@ const Video = () => {
               <span className="material-icons">call_end</span>
             </button>
           </div>
-          {/* Skip to Next Button */}
+
           <div style={{ marginTop: "10px" }}>
             <button onClick={endCall} style={skipButtonStyle}>Skip to Next</button>
           </div>
         </div>
       )}
 
-      {/* Message Image in Bottom Right */}
+
       <div
         style={{
           position: "absolute",
           bottom: "20px",
           right: "20px",
-          width: "50px", // Adjust size of the image
+          width: "50px", 
           height: "50px",
           cursor: "pointer",
         }}
       >
         <img
-          src="/msg.png" // Replace with the correct path to your image
+          src="/msg.png" 
           alt="Message"
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
@@ -176,16 +175,16 @@ const Video = () => {
 
 /* Styles */
 const videoStyle = {
-  width: "600px", // Increased size
+  width: "600px",
   height: "400px",
   backgroundColor: "#000",
   borderRadius: "10px",
 };
 
 const emojiButtonStyle = {
-  width: "80px",  // Bigger button size
+  width: "80px",  
   height: "80px",
-  fontSize: "40px", // Bigger emoji size
+  fontSize: "40px", 
   backgroundColor: "#007bff",
   color: "#fff",
   border: "none",

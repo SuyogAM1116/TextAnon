@@ -10,7 +10,7 @@ const Chat = () => {
   const [chatStarted, setChatStarted] = useState(false);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-  const [userMap, setUserMap] = useState({}); // Store user ID → name mapping
+  const [userMap, setUserMap] = useState({}); 
   const userIDRef = useRef(null);
   const chatContainerRef = useRef(null);
   const socketRef = useRef(null);
