@@ -6,15 +6,15 @@ import { ThemeContext } from "../components/ThemeContext";
 
 const Chat = () => {
   const { theme } = useContext(ThemeContext);
-  const [name, setName] = useState("");
-  const [chatStarted, setChatStarted] = useState(false);
+  const [name, setName] = useState(() => sessionStorage.getItem("nickname") || "");
+  const [chatStarted, setChatStarted] = useState(() => !!sessionStorage.getItem("nickname"));
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-  const [userMap, setUserMap] = useState({}); 
+  const [userMap, setUserMap] = useState({});
+  const [status, setStatus] = useState("Connecting you with a partner...");
   const userIDRef = useRef(null);
   const chatContainerRef = useRef(null);
   const socketRef = useRef(null);
-  const reconnectInterval = useRef(null);
 
   useEffect(() => {
     if (chatStarted) {
@@ -23,49 +23,58 @@ const Chat = () => {
     return () => disconnectWebSocket();
   }, [chatStarted]);
 
+  useEffect(() => {
+    chatContainerRef.current?.scrollTo({
+      top: chatContainerRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [messages]);
+
   const connectWebSocket = () => {
+    setStatus("Connecting you with a partner...");
     socketRef.current = new WebSocket("ws://localhost:8080");
 
     socketRef.current.onopen = () => {
-      console.log("✅ Connected to WebSocket Server");
+      console.log("Connected to WebSocket Server");
       socketRef.current.send(JSON.stringify({ type: "register", name }));
     };
 
     socketRef.current.onmessage = async (event) => {
       try {
-        let receivedMessage =
-          event.data instanceof Blob ? JSON.parse(await event.data.text()) : JSON.parse(event.data);
+        const received = event.data instanceof Blob
+          ? JSON.parse(await event.data.text())
+          : JSON.parse(event.data);
 
-        console.log("📩 Message from Server:", receivedMessage);
+        if (received.type === "userID") {
+          userIDRef.current = received.userID;
+        } else if (received.type === "chat") {
+          if (received.senderID !== userIDRef.current) {
+            setStatus(`You are now connected with ${received.senderName}`);
+          }
 
-        if (receivedMessage.type === "userID") {
-          userIDRef.current = receivedMessage.userID;
-          console.log("✅ UserID Received & Stored:", userIDRef.current);
-        } else if (receivedMessage.type === "chat") {
-          setUserMap((prevUserMap) => ({
-            ...prevUserMap,
-            [receivedMessage.senderID]: receivedMessage.senderName,
+          setUserMap((prev) => ({
+            ...prev,
+            [received.senderID]: received.senderName,
           }));
 
-          setMessages((prevMessages) => [
-            ...prevMessages,
+          setMessages((prev) => [
+            ...prev,
             {
-              senderID: receivedMessage.senderID,
-              senderName: receivedMessage.senderName,
-              text: receivedMessage.text,
+              senderID: received.senderID,
+              senderName: received.senderName,
+              text: received.text,
             },
           ]);
         }
-      } catch (error) {
-        console.error("❌ Error parsing message:", error);
+      } catch (err) {
+        console.error("Error parsing message:", err);
       }
     };
 
-    socketRef.current.onerror = (error) => console.error("⚠️ WebSocket Error:", error);
+    socketRef.current.onerror = (err) => console.error("WebSocket error:", err);
 
     socketRef.current.onclose = () => {
-      console.log("❌ WebSocket disconnected. Attempting to reconnect...");
-      attemptReconnect();
+      console.log("WebSocket closed");
     };
   };
 
@@ -74,69 +83,42 @@ const Chat = () => {
       socketRef.current.close();
       socketRef.current = null;
     }
-    clearInterval(reconnectInterval.current);
   };
-
-  const attemptReconnect = () => {
-    reconnectInterval.current = setInterval(() => {
-      if (!socketRef.current || socketRef.current.readyState === WebSocket.CLOSED) {
-        console.log("🔄 Reconnecting WebSocket...");
-        connectWebSocket();
-      } else {
-        clearInterval(reconnectInterval.current);
-      }
-    }, 3000);
-  };
-
-  useEffect(() => {
-    chatContainerRef.current?.scrollTo({ top: chatContainerRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
 
   const startChat = () => {
     if (name.trim()) {
+      sessionStorage.setItem("nickname", name);
       setChatStarted(true);
     }
   };
 
   const sendMessage = () => {
     if (!newMessage.trim()) return;
-
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-      console.error("❌ Cannot send message - WebSocket not open.");
-      return;
-    }
-
-    if (!userIDRef.current) {
-      console.error("⏳ Waiting for userID from server. Retrying in 500ms...");
-      setTimeout(sendMessage, 500);
-      return;
-    }
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
 
     const messageData = {
       type: "chat",
       senderID: userIDRef.current,
-      senderName: name, // Send the name along with the message
+      senderName: name,
       text: newMessage,
     };
 
-    console.log("📤 Sending Message:", messageData);
-
-    try {
-      socketRef.current.send(JSON.stringify(messageData));
-      setMessages((prevMessages) => [...prevMessages, messageData]);
-      setNewMessage("");
-    } catch (error) {
-      console.error("❌ Error sending message:", error);
-    }
+    socketRef.current.send(JSON.stringify(messageData));
+    setMessages((prev) => [...prev, messageData]);
+    setNewMessage("");
   };
 
   const startVideoCall = () => {
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      console.log("📹 Starting Video Call...");
+    if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: "start_video_call" }));
-    } else {
-      console.error("❌ WebSocket not connected for video call.");
     }
+  };
+
+  const skipToNextUser = () => {
+    disconnectWebSocket();
+    setMessages([]);
+    setUserMap({});
+    connectWebSocket();
   };
 
   const handleKeyPress = (e) => {
@@ -144,6 +126,14 @@ const Chat = () => {
       e.preventDefault();
       sendMessage();
     }
+  };
+
+  const goBackToHome = () => {
+    sessionStorage.removeItem("nickname");
+    setName("");
+    setMessages([]);
+    setChatStarted(false);
+    disconnectWebSocket();
   };
 
   return (
@@ -164,55 +154,53 @@ const Chat = () => {
           <NameSelection name={name} setName={setName} startChat={startChat} />
         ) : (
           <Row className="justify-content-center">
-            <Col
-              md={6}
-              className="p-3 rounded"
-              style={{
-                backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
-                color: theme === "dark" ? "#ffffff" : "#333333",
-                border: theme === "dark"
-                  ? "0.5px solid rgba(255, 255, 255, 0.2)"
-                  : "0.5px solid rgba(0, 0, 0, 0.2)",
-                boxShadow: theme === "dark"
-                  ? "0px 4px 10px rgba(255, 255, 255, 0.1)"
-                  : "0px 4px 10px rgba(0, 0, 0, 0.1)",
-                transition: "background-color 0.3s ease, color 0.3s ease",
-              }}
-            >
+            <Col md={6} className="p-3 rounded" style={{
+              backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
+              color: theme === "dark" ? "#ffffff" : "#333333",
+              border: theme === "dark"
+                ? "0.5px solid rgba(255, 255, 255, 0.2)"
+                : "0.5px solid rgba(0, 0, 0, 0.2)",
+              boxShadow: theme === "dark"
+                ? "0px 4px 10px rgba(255, 255, 255, 0.1)"
+                : "0px 4px 10px rgba(0, 0, 0, 0.1)",
+              transition: "background-color 0.3s ease, color 0.3s ease",
+            }}>
               <h2 className="text-center">Anonymous Chat</h2>
+
+              <div className="text-center my-2">
+                <small style={{ fontStyle: "italic" }}>{status}</small>
+              </div>
 
               <div
                 ref={chatContainerRef}
-                className="chat-box p-3 rounded mt-3"
+                className="chat-box p-3 rounded mt-2"
                 style={{
                   height: "400px",
                   overflowY: "auto",
                   display: "flex",
                   flexDirection: "column",
                   backgroundColor: theme === "dark" ? "#2c2c2c" : "#f0f0f0",
-                  transition: "background-color 0.3s ease",
                 }}
               >
                 {messages.map((msg, index) => (
                   <div
                     key={index}
-                    className="p-2 rounded mb-2"
                     style={{
                       width: "fit-content",
                       maxWidth: "80%",
                       alignSelf: msg.senderID === userIDRef.current ? "flex-end" : "flex-start",
                       backgroundColor: msg.senderID === userIDRef.current ? "#198754" : "#0d6efd",
-                      color: "#ffffff",
+                      color: "#fff",
                       padding: "10px",
                       borderRadius: "12px",
+                      marginBottom: "8px",
                       fontSize: "14px",
                     }}
                   >
                     <strong>
                       {msg.senderID === userIDRef.current
                         ? `${name} (you)`
-                        : userMap[msg.senderID] || "Unknown User"}
-                      :
+                        : userMap[msg.senderID] || "Unknown"}:
                     </strong>{" "}
                     {msg.text}
                   </div>
@@ -220,12 +208,24 @@ const Chat = () => {
               </div>
 
               <InputGroup className="mt-3">
-                <Form.Control type="text" placeholder="Type a message..." value={newMessage} onChange={(e) => setNewMessage(e.target.value)} onKeyDown={handleKeyPress} />
+                <Form.Control
+                  type="text"
+                  placeholder="Type a message..."
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyDown={handleKeyPress}
+                />
                 <Button variant="primary" onClick={sendMessage}>
                   <FaPaperPlane />
                 </Button>
                 <Button variant="success" className="ms-2" onClick={startVideoCall}>
                   <FaVideo />
+                </Button>
+                <Button variant="warning" className="ms-2" onClick={skipToNextUser}>
+                  Skip to Next
+                </Button>
+                <Button variant="secondary" className="ms-2" onClick={goBackToHome}>
+                  Home
                 </Button>
               </InputGroup>
             </Col>
