@@ -32,14 +32,18 @@ const Chat = () => {
 
   const connectWebSocket = () => {
     setStatus("Connecting you with a partner...");
+    // **Important:** Use 'ws://localhost:8080' for local testing with your server.
+    // For deployed version, replace with your backend WebSocket URL (e.g., 'wss://your-deployed-backend.com')
     socketRef.current = new WebSocket("ws://localhost:8080");
+    console.log("WebSocket connecting to: ws://localhost:8080"); // Log WebSocket connection URL
 
     socketRef.current.onopen = () => {
-      console.log("Connected to WebSocket Server");
+      console.log("WebSocket onopen: Connected to WebSocket Server");
       socketRef.current.send(JSON.stringify({ type: "register", name }));
     };
 
     socketRef.current.onmessage = async (event) => {
+      console.log("WebSocket onmessage event received:", event.data); // Log raw message data
       try {
         const received = event.data instanceof Blob
           ? JSON.parse(await event.data.text())
@@ -47,6 +51,7 @@ const Chat = () => {
 
         if (received.type === "userID") {
           userIDRef.current = received.userID;
+          console.log("Received userID from server:", received.userID, "userIDRef.current set to:", userIDRef.current); // Log userID and ref update
         } else if (received.type === "chat") {
           if (received.senderID !== userIDRef.current) {
             setStatus(`You are now connected with ${received.senderName}`);
@@ -65,16 +70,25 @@ const Chat = () => {
               text: received.text,
             },
           ]);
+        } else if (received.type === "systemMessage") { // Handling system messages (like partner left, etc.)
+          setStatus(received.text); // Update status with system message
+          console.log("System Message received:", received.text);
         }
+        // Add more message type handling here if needed
+
       } catch (err) {
-        console.error("Error parsing message:", err);
+        console.error("Error parsing WebSocket message:", err);
       }
     };
 
-    socketRef.current.onerror = (err) => console.error("WebSocket error:", err);
+    socketRef.current.onerror = (err) => {
+      console.error("WebSocket onerror: WebSocket error:", err);
+      setStatus("Error connecting to chat server."); // Update status on error
+    };
 
     socketRef.current.onclose = () => {
-      console.log("WebSocket closed");
+      console.log("WebSocket onclose: WebSocket closed");
+      setStatus("Disconnected from chat server."); // Update status on disconnect
     };
   };
 
@@ -82,6 +96,7 @@ const Chat = () => {
     if (socketRef.current) {
       socketRef.current.close();
       socketRef.current = null;
+      console.log("WebSocket disconnected programmatically.");
     }
   };
 
@@ -94,7 +109,10 @@ const Chat = () => {
 
   const sendMessage = () => {
     if (!newMessage.trim()) return;
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) return;
+    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+      console.warn("sendMessage: WebSocket not open, message not sent.");
+      return; // Don't send if socket is not open
+    }
 
     const messageData = {
       type: "chat",
@@ -103,18 +121,25 @@ const Chat = () => {
       text: newMessage,
     };
 
+    console.log("sendMessage: Sending chat message:", messageData); // Log before sending
     socketRef.current.send(JSON.stringify(messageData));
     setMessages((prev) => [...prev, messageData]);
     setNewMessage("");
   };
 
   const startVideoCall = () => {
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: "start_video_call" }));
-    }
+    // **Important:**  The 'start_video_call' message is NOT currently handled on the server.
+    // To enable video calls, you need to:
+    // 1. Implement server-side logic to handle 'start_video_call' and initiate video call signaling.
+    // 2. Integrate with your Video.jsx component or video call logic here.
+    // For now, this button will not trigger a video call in the current setup.
+    console.warn("startVideoCall: Video call functionality is not fully implemented yet.");
+    // socketRef.current.send(JSON.stringify({ type: "start_video_call" })); // <-- Currently not handled on server
+    alert("Video call feature is not yet fully implemented in this chat component. Please use the separate Video Call section for now."); // User feedback
   };
 
   const skipToNextUser = () => {
+    console.log("skipToNextUser: Initiating skip to next user.");
     disconnectWebSocket();
     setMessages([]);
     setUserMap({});
@@ -129,6 +154,7 @@ const Chat = () => {
   };
 
   const goBackToHome = () => {
+    console.log("goBackToHome: Going back to home, resetting chat state.");
     sessionStorage.removeItem("nickname");
     setName("");
     setMessages([]);
@@ -218,7 +244,7 @@ const Chat = () => {
                 <Button variant="primary" onClick={sendMessage}>
                   <FaPaperPlane />
                 </Button>
-                <Button variant="success" className="ms-2" onClick={startVideoCall}>
+                <Button variant="success" className="ms-2" onClick={startVideoCall}> {/* Video Call Button - Not fully functional yet */}
                   <FaVideo />
                 </Button>
                 <Button variant="warning" className="ms-2" onClick={skipToNextUser}>

@@ -8,11 +8,11 @@ import About from "./pages/About";
 import Settings from "./pages/Settings";
 import NavBar from "./components/NavBar";
 import Footer from "./components/Footer";
-import { ThemeProvider } from "./components/ThemeContext"; // Import ThemeProvider
+import { ThemeProvider } from "./components/ThemeContext"; 
 
 function App() {
   return (
-    <ThemeProvider> {/* Wrap the app with ThemeProvider */}
+    <ThemeProvider> 
       <Router>
         <div>
           <NavBar />
