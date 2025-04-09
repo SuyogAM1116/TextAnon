@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState, useContext } from "react";
 import { ThemeContext } from "../components/ThemeContext";
-// import { io } from "socket.io-client"; // Removed socket.io import
 import Peer from "simple-peer";
 
 const Video = () => {
@@ -17,30 +16,28 @@ const Video = () => {
     const [videoEnabled, setVideoEnabled] = useState(true);
     const [mediaStatus, setMediaStatus] = useState("Waiting to start media");
 
-    const socketRef = useRef(); // Will now hold a WebSocket object
+    const socketRef = useRef();
     const userVideoRef = useRef();
     const partnerVideoRef = useRef();
     const peerRef = useRef();
     const streamRef = useRef();
 
     useEffect(() => {
-        console.log("useEffect: Component mounted");
-        // socketRef.current = io("http://localhost:5000"); // Removed Socket.IO connection
-        socketRef.current = new WebSocket("ws://localhost:8080"); // Using WebSocket directly
-        console.log("useEffect: WebSocket connecting to ws://localhost:8080");
+        console.log(`${new Date().toLocaleTimeString()} - useEffect: Component mounted`);
+        socketRef.current = new WebSocket("wss://textanon.onrender.com");
+        console.log(`${new Date().toLocaleTimeString()} - useEffect: WebSocket connecting to wss://textanon.onrender.com`);
 
         socketRef.current.onopen = () => {
-            console.log("WebSocket connected to signaling server");
-            // No 'connect' event anymore, WebSocket 'onopen' is the equivalent
+            console.log(`${new Date().toLocaleTimeString()} - WebSocket connected to signaling server`);
         };
 
         socketRef.current.onerror = (error) => {
-            console.error("WebSocket connect_error:", error);
+            console.error(`${new Date().toLocaleTimeString()} - WebSocket connect_error:`, error);
             setMediaStatus(`Signaling server connection error: ${error.message || error}`);
         };
 
         socketRef.current.onclose = (event) => {
-            console.log("WebSocket disconnected:", event.reason);
+            console.log(`${new Date().toLocaleTimeString()} - WebSocket disconnected:`, event.reason);
             setMediaStatus(`Disconnected from signaling server: ${event.reason || 'Connection closed'}`);
         };
 
@@ -48,68 +45,63 @@ const Video = () => {
             try {
                 const parsedMessage = JSON.parse(event.data);
 
-                if (parsedMessage.type === "hey") { // Changed "hey" from server (could rename to "incomingCall" later)
-                    console.log("WebSocket message 'hey' received, receiving call from:", parsedMessage.callerID, "Signal:", parsedMessage.signal); // Log signal when received
+                if (parsedMessage.type === "hey") {
+                    console.log(`${new Date().toLocaleTimeString()} - WebSocket message 'hey' received, receiving call from:`, parsedMessage.callerID, "Signal:", parsedMessage.signal);
                     setReceivingCall(true);
                     setCallerSignal(parsedMessage.signal);
                 } else if (parsedMessage.type === "ice-candidate") {
                     if (peerRef.current && parsedMessage.candidate) {
-                        console.log("WebSocket message 'ice-candidate' received, adding ICE candidate to peer:", parsedMessage.candidate);
+                        console.log(`${new Date().toLocaleTimeString()} - WebSocket message 'ice-candidate' received, adding ICE candidate to peer:`, parsedMessage.candidate);
                         peerRef.current.signal(parsedMessage.candidate);
                     } else {
-                        console.warn("WebSocket message 'ice-candidate' received, but peerRef.current is not ready or candidate is missing.");
+                        console.warn(`${new Date().toLocaleTimeString()} - WebSocket message 'ice-candidate' received, but peerRef.current is not ready or candidate is missing.`);
                     }
                 } else if (parsedMessage.type === 'callAccepted') {
-                    console.log("WebSocket message 'callAccepted' received, signaling peer with answer:", parsedMessage.signal);
+                    console.log(`${new Date().toLocaleTimeString()} - WebSocket message 'callAccepted' received, signaling peer with answer:`, parsedMessage.signal);
                     setCallAccepted(true);
-                    if (peerRef.current) { // Check if peerRef.current exists before signaling
+                    if (peerRef.current) {
                         peerRef.current.signal(parsedMessage.signal);
                     } else {
-                        console.warn("WebSocket message 'callAccepted' received, but peerRef.current is not initialized yet.");
+                        console.warn(`${new Date().toLocaleTimeString()} - WebSocket message 'callAccepted' received, but peerRef.current is not initialized yet.`);
                     }
                 }
-                // Add more message type handling here if needed for other server messages
 
             } catch (error) {
-                console.error("Error parsing WebSocket message:", error);
+                console.error(`${new Date().toLocaleTimeString()} - Error parsing WebSocket message:`, error);
             }
         };
 
-
         return () => {
-            console.log("useEffect cleanup: Component unmounting");
+            console.log(`${new Date().toLocaleTimeString()} - useEffect cleanup: Component unmounting`);
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
-                console.log("useEffect cleanup: Local stream tracks stopped");
+                console.log(`${new Date().toLocaleTimeString()} - useEffect cleanup: Local stream tracks stopped`);
             }
             if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
                 socketRef.current.close();
-                console.log("useEffect cleanup: WebSocket disconnected");
+                console.log(`${new Date().toLocaleTimeString()} - useEffect cleanup: WebSocket disconnected`);
             }
         };
     }, []);
 
     const startVideoCall = () => {
-        console.log("startVideoCall: Starting video call initiation");
+        console.log(`${new Date().toLocaleTimeString()} - startVideoCall: Starting video call initiation`);
         setCallStarted(true);
         setMediaStatus("Getting media devices...");
 
         navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then(currentStream => {
-                console.log("getUserMedia success. Stream object:", currentStream);
+                console.log(`${new Date().toLocaleTimeString()} - getUserMedia success.`);
                 setStream(currentStream);
                 streamRef.current = currentStream;
                 if (userVideoRef.current) {
                     userVideoRef.current.srcObject = currentStream;
-                    console.log("startVideoCall: userVideoRef.current.srcObject set with local stream:", currentStream);
-                } else {
-                    console.warn("startVideoCall: userVideoRef.current is not yet available!");
                 }
                 setMediaStatus("Media devices ready, connecting...");
                 initiatePeerConnection(currentStream);
             })
             .catch(error => {
-                console.error("getUserMedia error:", error);
+                console.error(`${new Date().toLocaleTimeString()} - getUserMedia error:`, error);
                 setMediaStatus(`Error accessing media: ${error.message}`);
                 setCallStarted(false);
             });
@@ -121,109 +113,99 @@ const Video = () => {
             trickle: false,
             stream: currentStream,
         });
+        peerRef.current = peer;
 
         peer.on("signal", signal => {
-            console.log("Peer 'signal' event (initiator), emitting 'callUser' signal:", signal);
-            console.log("INITIATOR - Sending Offer SDP:", signal); // *** SDP Offer Log ***
-            socketRef.current.send(JSON.stringify({ type: "callUser", signal })); // Send 'callUser' message via WebSocket
+            console.log(`${new Date().toLocaleTimeString()} - Peer (Initiator) 'signal' event. connectionState: ${peer.connectionState}`);
+            console.log(`${new Date().toLocaleTimeString()} - INITIATOR - Sending Offer SDP:`, signal);
+            socketRef.current.send(JSON.stringify({ type: "callUser", signal }));
         });
 
         peer.on('icecandidate', candidate => {
             if (candidate) {
-                console.log("Peer 'icecandidate' event, sending ICE candidate:", candidate);
-                socketRef.current.send(JSON.stringify({ type: "ice-candidate", candidate: candidate })); // Send ICE candidate via WebSocket
+                console.log(`${new Date().toLocaleTimeString()} - Peer (Initiator) 'icecandidate' event. connectionState: ${peer.connectionState}`, candidate);
+                socketRef.current.send(JSON.stringify({ type: "ice-candidate", candidate: candidate }));
             }
         });
 
         peer.on("stream", remoteStream => {
-            console.log("Peer 'stream' event (initiator), remote stream received:", remoteStream);
+            console.log(`${new Date().toLocaleTimeString()} - Peer (Initiator) 'stream' event. connectionState: ${peer.connectionState}`, remoteStream);
             if (partnerVideoRef.current) {
                 partnerVideoRef.current.srcObject = remoteStream;
-                console.log("startVideoCall: partnerVideoRef.current.srcObject set with remote stream:", remoteStream);
-            } else {
-                console.warn("startVideoCall: partnerVideoRef.current is not yet available!");
             }
             setPeerConnected(true);
         });
 
         peer.on("connect", () => {
-            console.log("Peer 'connect' event (initiator), P2P connection established!");
+            console.log(`${new Date().toLocaleTimeString()} - Peer (Initiator) 'connect' event. connectionState: ${peer.connectionState}`);
         });
 
         peer.on("error", err => {
-            console.error("Peer 'error' event (initiator):", err);
+            console.error(`${new Date().toLocaleTimeString()} - Peer (Initiator) 'error' event. connectionState: ${peer.connectionState}`, err);
             setMediaStatus(`Peer connection error: ${err.message || 'Unknown error'}`);
             setCallStarted(false);
         });
-
-
-        peerRef.current = peer;
     };
 
-
     useEffect(() => {
-        if (receivingCall && !callAccepted && streamRef.current) {
-            console.log("useEffect [receivingCall, !callAccepted]: Answering incoming call with delay");
+        if (receivingCall && !callAccepted && streamRef.current && callerSignal) {
+            console.log(`${new Date().toLocaleTimeString()} - useEffect [receivingCall]: Answering incoming call. connectionState (before Peer creation): ${peerRef.current ? peerRef.current.connectionState : 'No Peer'}`);
+
             const peer = new Peer({
                 initiator: false,
                 trickle: false,
-                stream: streamRef.current,
+                // stream: streamRef.current,  // <-- Stream removed here for answerer
             });
+            peerRef.current = peer;
+            console.log(`${new Date().toLocaleTimeString()} - useEffect [receivingCall]: Peer (Answerer) created. connectionState (after Peer creation): ${peerRef.current.connectionState}`);
+
+            console.log(`${new Date().toLocaleTimeString()} - ANSWERER - Received Offer SDP (callerSignal):`, callerSignal);
+            console.log(`${new Date().toLocaleTimeString()} - useEffect [receivingCall]: Signaling with callerSignal (Offer SDP). connectionState (before signal): ${peerRef.current.connectionState}`);
+            peer.signal(callerSignal);
+            console.log(`${new Date().toLocaleTimeString()} - useEffect [receivingCall]: Signaled with callerSignal (Offer SDP). connectionState (after signal): ${peerRef.current.connectionState}`);
 
             peer.on("signal", signal => {
-                console.log("Peer 'signal' event (answerer, delayed), emitting 'acceptCall' signal:", signal);
-                console.log("ANSWERER - Sending Answer SDP:", signal); // *** SDP Answer Log ***
+                console.log(`${new Date().toLocaleTimeString()} - Peer (Answerer) 'signal' event. connectionState: ${peerRef.current.connectionState}`);
+                console.log(`${new Date().toLocaleTimeString()} - ANSWERER - Sending Answer SDP:`, signal);
                 socketRef.current.send(JSON.stringify({ type: "acceptCall", signal }));
             });
 
             peer.on('icecandidate', candidate => {
                 if (candidate) {
-                    console.log("Peer 'icecandidate' event (answerer, delayed), sending ICE candidate:", candidate);
+                    console.log(`${new Date().toLocaleTimeString()} - Peer (Answerer) 'icecandidate' event. connectionState: ${peerRef.current.connectionState}`, candidate);
                     socketRef.current.send(JSON.stringify({ type: "ice-candidate", candidate: candidate }));
                 }
             });
 
-
             peer.on("stream", remoteStream => {
-                console.log("Peer 'stream' event (answerer, delayed), remote stream received:", remoteStream);
+                console.log(`${new Date().toLocaleTimeString()} - Peer (Answerer) 'stream' event. connectionState: ${peerRef.current.connectionState}`, remoteStream);
                 if (partnerVideoRef.current) {
                     partnerVideoRef.current.srcObject = remoteStream;
-                    console.log("useEffect [receivingCall]: partnerVideoRef.current.srcObject set with remote stream (answerer):", remoteStream);
-                } else {
-                    console.warn("useEffect [receivingCall]: partnerVideoRef.current is not yet available! (answerer)");
                 }
                 setPeerConnected(true);
             });
 
             peer.on("connect", () => {
-                console.log("Peer 'connect' event (answerer, delayed), P2P connection established!");
+                console.log(`${new Date().toLocaleTimeString()} - Peer (Answerer) 'connect' event. connectionState: ${peerRef.current.connectionState}`);
             });
+
             peer.on("error", err => {
-                console.error("Peer 'error' event (answerer, delayed):", err);
-                setMediaStatus(`Peer connection error (answering with delay): ${err.message || 'Unknown error'}`);
-                setReceivingCall(false); // Maybe stop receiving call on error?
+                console.error(`${new Date().toLocaleTimeString()} - Peer (Answerer) 'error' event. connectionState: ${peerRef.current.connectionState}`, err);
+                setMediaStatus(`Peer connection error (answering): ${err.message || 'Unknown error'}`);
+                setReceivingCall(false);
             });
 
-
-            peerRef.current = peer;
             setCallAccepted(true);
             setCallStarted(true);
-
-            setTimeout(() => { // *** Introduce a delay before signaling Answer SDP ***
-                console.log("Delayed signaling with callerSignal (Answer SDP)...");
-                console.log("ANSWERER - Received Offer SDP (callerSignal):", callerSignal); // *** SDP Offer (as callerSignal) Log ***
-                peer.signal(callerSignal); // Signal *after* a short delay
-            }, 100); // Try 100ms delay first, adjust if needed
-
         }
     }, [receivingCall, callerSignal, callAccepted]);
 
     const endCall = () => {
-        console.log("endCall: Ending call");
+        console.log(`${new Date().toLocaleTimeString()} - endCall: Ending call`);
         if (peerRef.current) {
             peerRef.current.destroy();
             peerRef.current = null;
-            console.log("endCall: Peer connection destroyed");
+            console.log(`${new Date().toLocaleTimeString()} - endCall: Peer connection destroyed`);
         }
 
         setCallStarted(false);
@@ -236,17 +218,17 @@ const Video = () => {
         if (partnerVideoRef.current && partnerVideoRef.current.srcObject) {
             partnerVideoRef.current.srcObject.getTracks().forEach(track => track.stop());
             partnerVideoRef.current.srcObject = null;
-            console.log("endCall: Partner video stream stopped and cleared");
+            console.log(`${new Date().toLocaleTimeString()} - endCall: Partner video stream stopped and cleared`);
         }
-        console.log("endCall: Call ended, state reset");
+        console.log(`${new Date().toLocaleTimeString()} - endCall: Call ended, state reset`);
     };
 
     const handleSkip = () => {
-        console.log("handleSkip: Skipping to next call");
+        console.log(`${new Date().toLocaleTimeString()} - handleSkip: Skipping to next call`);
         endCall();
         setTimeout(() => {
             startVideoCall();
-            console.log("handleSkip: startVideoCall called after delay");
+            console.log(`${new Date().toLocaleTimeString()} - handleSkip: startVideoCall called after delay`);
         }, 1000);
     };
 
@@ -258,9 +240,9 @@ const Video = () => {
         if (streamRef.current && streamRef.current.getAudioTracks()) {
             streamRef.current.getAudioTracks().forEach((track) => (track.enabled = !muted));
             setMuted(!muted);
-            console.log(`toggleMute: Audio Muted: ${!muted}`);
+            console.log(`${new Date().toLocaleTimeString()} - toggleMute: Audio Muted: ${!muted}`);
         } else {
-            console.warn("toggleMute: No local stream or audio tracks available");
+            console.warn(`${new Date().toLocaleTimeString()} - toggleMute: No local stream or audio tracks available`);
         }
     };
 
@@ -268,9 +250,9 @@ const Video = () => {
         if (streamRef.current && streamRef.current.getVideoTracks()) {
             streamRef.current.getVideoTracks().forEach((track) => (track.enabled = !videoEnabled));
             setVideoEnabled(!videoEnabled);
-            console.log(`toggleVideo: Video Enabled: ${!videoEnabled}`);
+            console.log(`${new Date().toLocaleTimeString()} - toggleVideo: Video Enabled: ${!videoEnabled}`);
         } else {
-            console.warn("toggleVideo: No local stream or video tracks available");
+            console.warn(`${new Date().toLocaleTimeString()} - toggleVideo: No local stream or video tracks available`);
         }
     };
 
@@ -338,7 +320,6 @@ const Video = () => {
                             <video ref={partnerVideoRef} autoPlay playsInline style={videoStyle} placeholder="Waiting for Stranger Video" />
                         </div>
                     </div>
-                    {/* Control Buttons */}
                     <div style={{ display: "flex", justifyContent: "center", gap: "15px" }}>
                         <button onClick={toggleMute} style={emojiButtonStyle}>
                             <span className="material-icons">{muted ? "mic_off" : "mic"}</span>
@@ -378,8 +359,6 @@ const Video = () => {
 };
 
 export default Video;
-
-// --- STYLES ---
 
 const videoStyle = {
     width: "600px",
@@ -436,7 +415,6 @@ const startButtonStyle = {
     fontSize: "16px",
     marginTop: "10px",
 };
-
 
 const inputStyle = (theme) => ({
     width: "100%",

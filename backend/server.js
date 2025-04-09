@@ -9,30 +9,27 @@ console.log(`🚀 WebSocket Server started on ws://localhost:${PORT}`);
 let waitingUser = null;
 const pairs = new Map();
 const clients = new Map();
-const usernames = new Map(); // Store userID -> username mapping
+const usernames = new Map();
 
 server.on("connection", (socket) => {
     const userID = Date.now().toString();
     clients.set(socket, userID);
-    usernames.set(userID, `User ${userID}`); // Default name
+    usernames.set(userID, `User ${userID}`);
 
     console.log(`✅ User ${userID} connected`);
 
     socket.send(JSON.stringify({ type: "userID", userID }));
 
-    // Pair users for chat and video (reusing same pairing logic)
     if (waitingUser) {
         const partner = waitingUser;
         pairs.set(socket, partner);
         pairs.set(partner, socket);
         waitingUser = null;
 
-        // Notify both users about connection (for chat and potentially video)
         const message = JSON.stringify({ type: "systemMessage", sender: "System", text: "You are now connected to a partner!" });
         socket.send(message);
         partner.send(message);
 
-        // Inform clients they are paired for video call initiation (optional, client can just try to call)
         socket.send(JSON.stringify({ type: "partnerConnected", partnerID: clients.get(partner) }));
         partner.send(JSON.stringify({ type: "partnerConnected", partnerID: userID }));
 
@@ -41,51 +38,41 @@ server.on("connection", (socket) => {
         socket.send(JSON.stringify({ type: "systemMessage", sender: "System", text: "Waiting for a partner..." }));
     }
 
-    // Handle incoming messages
     socket.on("message", (message) => {
         try {
             const parsedMessage = JSON.parse(message);
             const partner = pairs.get(socket);
 
             if (parsedMessage.type === "register") {
-                // ✅ Store user's chosen name
                 usernames.set(userID, parsedMessage.name);
-            }
-            else if (parsedMessage.type === "chat") {
+            } else if (parsedMessage.type === "chat") {
                 if (partner && partner.readyState === WebSocket.OPEN) {
                     partner.send(
                         JSON.stringify({
                             senderID: userID,
-                            senderName: usernames.get(userID), // ✅ Send stored name
+                            senderName: usernames.get(userID),
                             text: parsedMessage.text,
                             type: "chat",
                         })
                     );
                 }
-            }
-            // ✅ WebRTC Signaling: Handling offer, answer, ice-candidate, callUser, acceptCall messages
-            else if (parsedMessage.type === "callUser") {
+            } else if (parsedMessage.type === "callUser") {
                 if (partner && partner.readyState === WebSocket.OPEN) {
-                    // 'callUser' is initiated by caller to callee
                     partner.send(JSON.stringify({
-                        type: "hey", // Using "hey" as in your client-side code, can be renamed to "incomingCall"
-                        signal: parsedMessage.signal, // Relay the signal data
-                        callerID: userID // Optionally send caller's ID if needed
+                        type: "hey",
+                        signal: parsedMessage.signal,
+                        callerID: userID
                     }));
                 }
-            }
-            else if (parsedMessage.type === "acceptCall") {
+            } else if (parsedMessage.type === "acceptCall") {
                 if (partner && partner.readyState === WebSocket.OPEN) {
-                    // 'acceptCall' is answer from callee back to caller
                     partner.send(JSON.stringify({
                         type: "callAccepted",
-                        signal: parsedMessage.signal // Relay the answer signal
+                        signal: parsedMessage.signal
                     }));
                 }
-            }
-            else if (parsedMessage.type === "ice-candidate") { // Standard WebRTC candidate type
+            } else if (parsedMessage.type === "ice-candidate") {
                 if (partner && partner.readyState === WebSocket.OPEN) {
-                    // Relay ICE candidates for NAT traversal
                     partner.send(JSON.stringify({
                         type: "ice-candidate",
                         candidate: parsedMessage.candidate
@@ -94,13 +81,10 @@ server.on("connection", (socket) => {
             }
         } catch (error) {
             console.error("❌ Error parsing message:", error);
-
-            // Send error message back to client
             socket.send(JSON.stringify({ type: "systemMessage", sender: "System", text: "An error occurred. Please try again." }));
         }
     });
 
-    // Handle disconnection
     socket.on("close", () => {
         console.log(`❌ User ${userID} disconnected`);
         clients.delete(socket);
@@ -112,7 +96,6 @@ server.on("connection", (socket) => {
         if (partner && partner.readyState === WebSocket.OPEN) {
             partner.send(JSON.stringify({ type: "systemMessage", sender: "System", text: "Your partner has left. Finding a new match..." }));
 
-            // If waitingUser is available, pair the disconnected partner with them
             if (!waitingUser) {
                 waitingUser = partner;
                 partner.send(JSON.stringify({ type: "systemMessage", sender: "System", text: "Waiting for a new partner..." }));
@@ -126,7 +109,6 @@ server.on("connection", (socket) => {
                 partner.send(message);
                 newPartner.send(message);
 
-                // Inform new partners they are paired for video call (optional)
                 partner.send(JSON.stringify({ type: "partnerConnected", partnerID: clients.get(newPartner) }));
                 newPartner.send(JSON.stringify({ type: "partnerConnected", partnerID: clients.get(partner) }));
             }
@@ -137,8 +119,7 @@ server.on("connection", (socket) => {
         if (partner) pairs.delete(partner);
     });
 
-    // Handle errors
     socket.on("error", (error) => {
         console.error("⚠️ WebSocket Error:", error.message);
     });
-});
+})

@@ -34,7 +34,7 @@ const Chat = () => {
     setStatus("Connecting you with a partner...");
     // **Important:** Use 'ws://localhost:8080' for local testing with your server.
     // For deployed version, replace with your backend WebSocket URL (e.g., 'wss://your-deployed-backend.com')
-    socketRef.current = new WebSocket("ws://localhost:8080");
+    socketRef.current = new WebSocket("wss://textanon.onrender.com");
     console.log("WebSocket connecting to: ws://localhost:8080"); // Log WebSocket connection URL
 
     socketRef.current.onopen = () => {
