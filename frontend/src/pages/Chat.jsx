@@ -1,265 +1,473 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
-import { Container, Row, Col, Button, Form, InputGroup } from "react-bootstrap";
+import { Container, Row, Col, Button, Form, InputGroup, Spinner } from "react-bootstrap";
 import { FaPaperPlane, FaVideo } from "react-icons/fa";
-import NameSelection from "../components/NameSelection";
 import { ThemeContext } from "../components/ThemeContext";
+import CryptoJS from 'crypto-js';
 
 const Chat = () => {
-  const { theme } = useContext(ThemeContext);
-  const [name, setName] = useState(() => sessionStorage.getItem("nickname") || "");
-  const [chatStarted, setChatStarted] = useState(() => !!sessionStorage.getItem("nickname"));
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState("");
-  const [userMap, setUserMap] = useState({});
-  const [status, setStatus] = useState("Connecting you with a partner...");
-  const userIDRef = useRef(null);
-  const chatContainerRef = useRef(null);
-  const socketRef = useRef(null);
+    const { theme } = useContext(ThemeContext);
+    const [name, setName] = useState("");
+    const [sessionID] = useState(() => Math.random().toString(36).substring(2));
+    const [chatStarted, setChatStarted] = useState(false);
+    const [messages, setMessages] = useState([]);
+    const [newMessage, setNewMessage] = useState("");
+    const [userMap, setUserMap] = useState({});
+    const [status, setStatus] = useState("Connecting you with a partner...");
+    const [isConnecting, setIsConnecting] = useState(false);
+    const userIDRef = useRef(null);
+    const chatContainerRef = useRef(null);
+    const socketRef = useRef(null);
+    const reconnectTimeoutRef = useRef(null);
+    const encryptionKeyRef = useRef(null); // Initialize as null - key will be received or generated
 
-  useEffect(() => {
-    if (chatStarted) {
-      connectWebSocket();
-    }
-    return () => disconnectWebSocket();
-  }, [chatStarted]);
+    useEffect(() => {
+        if (!encryptionKeyRef.current) { // Generate key only if not already received
+            encryptionKeyRef.current = CryptoJS.lib.WordArray.random(32).toString(); // Generate key initially
+            console.log("Generated Initial Encryption Key (User 1):", encryptionKeyRef.current.substring(0, 10) + "..."); // Log initial key generation
+        } else {
+            console.log("Encryption Key already set (User 2 received key):", encryptionKeyRef.current.substring(0, 10) + "..."); // Log when key is already set (received)
+        }
 
-  useEffect(() => {
-    chatContainerRef.current?.scrollTo({
-      top: chatContainerRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }, [messages]);
+        if (chatStarted) {
+            connectWebSocket();
+        }
+        return () => disconnectWebSocket();
+    }, [chatStarted]);
 
-  const connectWebSocket = () => {
-    setStatus("Connecting you with a partner...");
-    // **Important:** Use 'ws://localhost:8080' for local testing with your server.
-    // For deployed version, replace with your backend WebSocket URL (e.g., 'wss://your-deployed-backend.com')
-    socketRef.current = new WebSocket("wss://textanon.onrender.com");
-    console.log("WebSocket connecting to: ws://localhost:8080"); // Log WebSocket connection URL
+    useEffect(() => {
+        if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTo({
+                top: chatContainerRef.current.scrollHeight,
+                behavior: "smooth",
+            });
+        }
+    }, [messages]);
 
-    socketRef.current.onopen = () => {
-      console.log("WebSocket onopen: Connected to WebSocket Server");
-      socketRef.current.send(JSON.stringify({ type: "register", name }));
+    const connectWebSocket = () => {
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+            console.log("WebSocket already connected, skipping reconnection.");
+            return;
+        }
+
+        setStatus("Connecting to chat server...");
+        setIsConnecting(true);
+        socketRef.current = new WebSocket("ws://localhost:8080");
+        console.log("WebSocket connecting to: ws://localhost:8080");
+
+        socketRef.current.onopen = () => {
+            console.log("WebSocket onopen: Connected to WebSocket Server");
+            setIsConnecting(false);
+            setStatus("Registering with server...");
+            socketRef.current.send(JSON.stringify({
+                type: "register",
+                name,
+                sessionID,
+                encryptionKey: encryptionKeyRef.current // Send encryption key to server
+            }));
+            clearTimeout(reconnectTimeoutRef.current);
+        };
+
+        socketRef.current.onmessage = async (event) => {
+            try {
+                const received = event.data instanceof Blob
+                    ? JSON.parse(await event.data.text())
+                    : JSON.parse(event.data);
+                handleMessage(received);
+            } catch (err) {
+                console.error("Error parsing WebSocket message:", err);
+                setStatus("Error processing message.");
+            }
+        };
+
+        socketRef.current.onerror = (err) => {
+            console.error("WebSocket onerror: WebSocket error:", err);
+            setIsConnecting(false);
+            setStatus("WebSocket connection error.");
+            reconnectWebSocket();
+        };
+
+        socketRef.current.onclose = (event) => {
+            console.log("WebSocket onclose: WebSocket closed", event);
+            setIsConnecting(false);
+            if (event.code !== 1000) {
+                setStatus("Disconnected from chat server. Reconnecting...");
+                reconnectWebSocket();
+            } else {
+                setStatus("Disconnected from chat server.");
+            }
+        };
     };
 
-    socketRef.current.onmessage = async (event) => {
-      console.log("WebSocket onmessage event received:", event.data); // Log raw message data
-      try {
-        const received = event.data instanceof Blob
-          ? JSON.parse(await event.data.text())
-          : JSON.parse(event.data);
+    const reconnectWebSocket = () => {
+        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = setTimeout(() => {
+            console.log("Attempting to reconnect WebSocket...");
+            connectWebSocket();
+        }, 3000);
+    };
 
-        if (received.type === "userID") {
-          userIDRef.current = received.userID;
-          console.log("Received userID from server:", received.userID, "userIDRef.current set to:", userIDRef.current); // Log userID and ref update
-        } else if (received.type === "chat") {
-          if (received.senderID !== userIDRef.current) {
+    const disconnectWebSocket = () => {
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+            socketRef.current.close(1000, "User initiated disconnect");
+            console.log("WebSocket disconnected programmatically.");
+        }
+        if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+        setIsConnecting(false);
+    };
+
+    const handleMessage = (received) => {
+        switch (received.type) {
+            case "userID":
+                handleUserIDMessage(received);
+                break;
+            case "chat":
+                handleChatMessage(received);
+                break;
+            case "chatHistory":
+                handleChatHistoryMessage(received);
+                break;
+            case "systemMessage":
+                handleSystemMessage(received);
+                break;
+            case "chatEnded":
+                handleChatEndedMessage(received);
+                break;
+            case "encryptionKey":
+                handleEncryptionKeyMessage(received);
+                break;
+            default:
+                console.warn("Unknown message type:", received.type);
+        }
+    };
+
+    const handleUserIDMessage = (received) => {
+        userIDRef.current = received.userID;
+        console.log("Received userID from server:", received.userID);
+        setStatus("Finding a partner...");
+    };
+
+    const handleChatMessage = (received) => {
+        if (received.senderID !== userIDRef.current) {
             setStatus(`You are now connected with ${received.senderName}`);
-          }
+        }
 
-          setUserMap((prev) => ({
+        setUserMap((prev) => ({
             ...prev,
             [received.senderID]: received.senderName,
-          }));
+        }));
 
-          setMessages((prev) => [
-            ...prev,
-            {
-              senderID: received.senderID,
-              senderName: received.senderName,
-              text: received.text,
-            },
-          ]);
-        } else if (received.type === "systemMessage") { // Handling system messages (like partner left, etc.)
-          setStatus(received.text); // Update status with system message
-          console.log("System Message received:", received.text);
+        console.log("Received encrypted message:", received.text); // Log received encrypted message
+        console.log("Attempting decryption with key:", encryptionKeyRef.current.substring(0, 10) + "..."); // Log key used for decryption
+
+        let decryptedText;
+        try {
+            const bytes = CryptoJS.AES.decrypt(received.text, encryptionKeyRef.current);
+            decryptedText = bytes.toString(CryptoJS.enc.Utf8);
+            if (!decryptedText) {
+                decryptedText = "<Message decryption failed>";
+                console.warn("Decryption failed for message:", received.text);
+            } else {
+                console.log("Successfully decrypted message:", decryptedText); // Log successful decryption
+            }
+        } catch (e) {
+            console.error("Decryption error:", e);
+            decryptedText = "<Message decryption error>";
         }
-        // Add more message type handling here if needed
 
-      } catch (err) {
-        console.error("Error parsing WebSocket message:", err);
-      }
+        setMessages((prev) => {
+            const updatedMessages = [...prev, {
+                senderID: received.senderID,
+                senderName: received.senderName,
+                text: decryptedText,
+            }];
+            return updatedMessages;
+        });
     };
 
-    socketRef.current.onerror = (err) => {
-      console.error("WebSocket onerror: WebSocket error:", err);
-      setStatus("Error connecting to chat server."); // Update status on error
+    const handleChatHistoryMessage = (received) => {
+        const decryptedMessages = received.messages.map(msg => {
+            let decryptedText;
+            try {
+                const bytes = CryptoJS.AES.decrypt(msg.text, encryptionKeyRef.current);
+                decryptedText = bytes.toString(CryptoJS.enc.Utf8);
+                if (!decryptedText) decryptedText = "<Message decryption failed>";
+            } catch (e) {
+                console.error("Decryption error:", e);
+                decryptedText = "<Message decryption error>";
+            }
+            return { ...msg, text: decryptedText };
+        });
+        setMessages(decryptedMessages);
+        setUserMap((prev) => {
+            const updatedMap = { ...prev };
+            decryptedMessages.forEach((msg) => {
+                updatedMap[msg.senderID] = msg.senderName;
+            });
+            return updatedMap;
+        });
+        if (decryptedMessages.length > 0) {
+            const partnerMessage = decryptedMessages
+                .slice()
+                .reverse()
+                .find((msg) => msg.senderID !== userIDRef.current);
+            setStatus(
+                partnerMessage
+                    ? `You are now connected with ${partnerMessage.senderName}`
+                    : "Connected, waiting for partner..."
+            );
+        } else {
+            setStatus("Connected, waiting for partner...");
+        }
     };
 
-    socketRef.current.onclose = () => {
-      console.log("WebSocket onclose: WebSocket closed");
-      setStatus("Disconnected from chat server."); // Update status on disconnect
-    };
-  };
-
-  const disconnectWebSocket = () => {
-    if (socketRef.current) {
-      socketRef.current.close();
-      socketRef.current = null;
-      console.log("WebSocket disconnected programmatically.");
-    }
-  };
-
-  const startChat = () => {
-    if (name.trim()) {
-      sessionStorage.setItem("nickname", name);
-      setChatStarted(true);
-    }
-  };
-
-  const sendMessage = () => {
-    if (!newMessage.trim()) return;
-    if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-      console.warn("sendMessage: WebSocket not open, message not sent.");
-      return; // Don't send if socket is not open
-    }
-
-    const messageData = {
-      type: "chat",
-      senderID: userIDRef.current,
-      senderName: name,
-      text: newMessage,
+    const handleSystemMessage = (received) => {
+        setStatus(received.text);
+        console.log("System Message received:", received.text);
     };
 
-    console.log("sendMessage: Sending chat message:", messageData); // Log before sending
-    socketRef.current.send(JSON.stringify(messageData));
-    setMessages((prev) => [...prev, messageData]);
-    setNewMessage("");
-  };
+    const handleChatEndedMessage = () => {
+        setMessages([]);
+        setUserMap({});
+        setStatus("Partner disconnected. Finding a new partner...");
+    };
 
-  const startVideoCall = () => {
-    // **Important:**  The 'start_video_call' message is NOT currently handled on the server.
-    // To enable video calls, you need to:
-    // 1. Implement server-side logic to handle 'start_video_call' and initiate video call signaling.
-    // 2. Integrate with your Video.jsx component or video call logic here.
-    // For now, this button will not trigger a video call in the current setup.
-    console.warn("startVideoCall: Video call functionality is not fully implemented yet.");
-    // socketRef.current.send(JSON.stringify({ type: "start_video_call" })); // <-- Currently not handled on server
-    alert("Video call feature is not yet fully implemented in this chat component. Please use the separate Video Call section for now."); // User feedback
-  };
+    const handleEncryptionKeyMessage = (received) => {
+        encryptionKeyRef.current = received.key; // Set the received key
+        console.log("Received Encryption Key from Partner (User 2):", encryptionKeyRef.current.substring(0, 10) + "..."); // Log received key
+    };
 
-  const skipToNextUser = () => {
-    console.log("skipToNextUser: Initiating skip to next user.");
-    disconnectWebSocket();
-    setMessages([]);
-    setUserMap({});
-    connectWebSocket();
-  };
 
-  const handleKeyPress = (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
+    const startChat = () => {
+        if (name.trim()) {
+            setChatStarted(true);
+        } else {
+            setStatus("Please enter a valid name.");
+        }
+    };
 
-  const goBackToHome = () => {
-    console.log("goBackToHome: Going back to home, resetting chat state.");
-    sessionStorage.removeItem("nickname");
-    setName("");
-    setMessages([]);
-    setChatStarted(false);
-    disconnectWebSocket();
-  };
+    const sendMessage = () => {
+        if (!newMessage.trim()) return;
+        if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
+            console.warn("sendMessage: WebSocket not open, message not sent.");
+            setStatus("Cannot send message: Not connected.");
+            return;
+        }
 
-  return (
-    <div
-      className="chat-page d-flex align-items-center justify-content-center"
-      style={{
-        height: "100vh",
-        width: "100vw",
-        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa",
-        color: theme === "dark" ? "#ffffff" : "#333333",
-        position: "relative",
-        overflow: "hidden",
-        transition: "background-color 0.3s ease, color 0.3s ease",
-      }}
-    >
-      <Container>
-        {!chatStarted ? (
-          <NameSelection name={name} setName={setName} startChat={startChat} />
-        ) : (
-          <Row className="justify-content-center">
-            <Col md={6} className="p-3 rounded" style={{
-              backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
-              color: theme === "dark" ? "#ffffff" : "#333333",
-              border: theme === "dark"
-                ? "0.5px solid rgba(255, 255, 255, 0.2)"
-                : "0.5px solid rgba(0, 0, 0, 0.2)",
-              boxShadow: theme === "dark"
-                ? "0px 4px 10px rgba(255, 255, 255, 0.1)"
-                : "0px 4px 10px rgba(0, 0, 0, 0.1)",
-              transition: "background-color 0.3s ease, color 0.3s ease",
-            }}>
-              <h2 className="text-center">Anonymous Chat</h2>
+        console.log("Encryption Key used for sending:", encryptionKeyRef.current.substring(0, 10) + "..."); // Log key used for encryption
+        console.log("Plain text message to encrypt:", newMessage); // Log plain text message
 
-              <div className="text-center my-2">
-                <small style={{ fontStyle: "italic" }}>{status}</small>
-              </div>
+        const encryptedMessageText = CryptoJS.AES.encrypt(newMessage, encryptionKeyRef.current).toString();
 
-              <div
-                ref={chatContainerRef}
-                className="chat-box p-3 rounded mt-2"
-                style={{
-                  height: "400px",
-                  overflowY: "auto",
-                  display: "flex",
-                  flexDirection: "column",
-                  backgroundColor: theme === "dark" ? "#2c2c2c" : "#f0f0f0",
-                }}
-              >
-                {messages.map((msg, index) => (
-                  <div
-                    key={index}
-                    style={{
-                      width: "fit-content",
-                      maxWidth: "80%",
-                      alignSelf: msg.senderID === userIDRef.current ? "flex-end" : "flex-start",
-                      backgroundColor: msg.senderID === userIDRef.current ? "#198754" : "#0d6efd",
-                      color: "#fff",
-                      padding: "10px",
-                      borderRadius: "12px",
-                      marginBottom: "8px",
-                      fontSize: "14px",
-                    }}
-                  >
-                    <strong>
-                      {msg.senderID === userIDRef.current
-                        ? `${name} (you)`
-                        : userMap[msg.senderID] || "Unknown"}:
-                    </strong>{" "}
-                    {msg.text}
-                  </div>
-                ))}
-              </div>
+        console.log("Encrypted message sent:", encryptedMessageText); // Log encrypted message sent
 
-              <InputGroup className="mt-3">
-                <Form.Control
-                  type="text"
-                  placeholder="Type a message..."
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyDown={handleKeyPress}
-                />
-                <Button variant="primary" onClick={sendMessage}>
-                  <FaPaperPlane />
-                </Button>
-                <Button variant="success" className="ms-2" onClick={startVideoCall}> {/* Video Call Button - Not fully functional yet */}
-                  <FaVideo />
-                </Button>
-                <Button variant="warning" className="ms-2" onClick={skipToNextUser}>
-                  Skip to Next
-                </Button>
-                <Button variant="secondary" className="ms-2" onClick={goBackToHome}>
-                  Home
-                </Button>
-              </InputGroup>
-            </Col>
-          </Row>
-        )}
-      </Container>
-    </div>
-  );
+        const messageData = {
+            type: "chat",
+            senderID: userIDRef.current,
+            senderName: name,
+            text: encryptedMessageText,
+        };
+
+        socketRef.current.send(JSON.stringify(messageData));
+        setMessages((prev) => [...prev, { ...messageData, text: newMessage }]);
+        setNewMessage("");
+    };
+
+
+    const startVideoCall = () => {
+        console.warn("startVideoCall: Video call functionality is not fully implemented yet.");
+        alert("Video call feature is not yet fully implemented in this chat component. Please use the separate Video Call section for now.");
+    };
+
+    const skipToNextUser = () => {
+        console.log("skipToNextUser: Initiating skip to next user.");
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+            socketRef.current.send(JSON.stringify({ type: "skip" }));
+            setMessages([]);
+            setUserMap({});
+            setStatus("Finding a new partner...");
+        } else {
+            console.warn("skipToNextUser: WebSocket not open, cannot skip.");
+            setStatus("Reconnecting to find a new partner...");
+            connectWebSocket();
+        }
+    };
+
+    const handleKeyPress = (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            sendMessage();
+        }
+    };
+
+    const goBackToHome = () => {
+        console.log("goBackToHome: Going back to home, resetting chat state.");
+        setName("");
+        setMessages([]);
+        setUserMap({});
+        setChatStarted(false);
+        setStatus("Disconnected from chat.");
+        disconnectWebSocket();
+    };
+
+    const handleNameSelectionKeyPress = (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            startChat();
+        }
+    };
+
+
+    return (
+        <div
+            className="chat-page d-flex align-items-center justify-content-center"
+            style={{
+                width: "100vw",
+                minHeight: "100vh",
+                backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa",
+                color: theme === "dark" ? "#ffffff" : "#333333",
+                position: "relative",
+                overflow: "hidden",
+                transition: "background-color 0.3s ease, color 0.3s ease",
+            }}
+        >
+            <Container>
+                {!chatStarted ? (
+                    <Row className="justify-content-center">
+                        <Col md={6} lg={4}>
+                            <div style={{ maxWidth: '400px', margin: '0 auto' }}>
+                                <Form>
+                                    <Form.Group className="mb-3">
+                                        <Form.Label>Enter your nickname:</Form.Label>
+                                        <Form.Control
+                                            type="text"
+                                            placeholder="Your nickname"
+                                            value={name}
+                                            onChange={(e) => setName(e.target.value)}
+                                            onKeyDown={handleNameSelectionKeyPress}
+                                        />
+                                    </Form.Group>
+                                    <div className="d-grid">
+                                        <Button variant="primary" onClick={startChat}>
+                                            Start Chat
+                                        </Button>
+                                    </div>
+                                </Form>
+                            </div>
+                        </Col>
+                    </Row>
+                ) : (
+                    <Row className="justify-content-center">
+                        <Col
+                            md={6}
+                            className="p-3 rounded d-flex flex-column"
+                            style={{
+                                backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
+                                color: theme === "dark" ? "#ffffff" : "#333333",
+                                border: theme === "dark"
+                                    ? "0.5px solid rgba(255, 255, 255, 0.2)"
+                                    : "0.5px solid rgba(0, 0, 0, 0.2)",
+                                boxShadow: theme === "dark"
+                                    ? "0px 4px 10px rgba(255, 255, 255, 0.1)"
+                                    : "0px 4px 10px rgba(0, 0, 0, 0.1)",
+                                transition: "background-color 0.3s ease, color 0.3s ease",
+                                display: 'flex',
+                                flexDirection: 'column',
+                                height: 'auto',
+                                minHeight: '500px'
+                            }}
+                        >
+                            <h2 className="text-center">Anonymous Chat</h2>
+
+                            <div className="text-center my-2">
+                                <small style={{ fontStyle: "italic" }}>{status}</small>
+                                {isConnecting && <Spinner animation="border" size="sm" className="ms-2" />}
+                            </div>
+
+                            <div
+                                ref={chatContainerRef}
+                                className="chat-box p-3 rounded mt-2"
+                                style={{
+                                    height: "400px",
+                                    overflowY: "auto",
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    backgroundColor: theme === "dark" ? "#2c2c2c" : "#f0f0f0",
+                                    flexGrow: 1,
+                                    marginBottom: '10px'
+                                }}
+                            >
+                                {messages.map((msg, index) => (
+                                    <div
+                                        key={index}
+                                        style={{
+                                            width: "fit-content",
+                                            maxWidth: "80%",
+                                            alignSelf: msg.senderID === userIDRef.current ? "flex-end" : "flex-start",
+                                            backgroundColor: msg.senderID === userIDRef.current ? "#198754" : "#0d6efd",
+                                            color: "#fff",
+                                            padding: "10px",
+                                            borderRadius: "12px",
+                                            marginBottom: "8px",
+                                            fontSize: "14px",
+                                        }}
+                                    >
+                                        <strong>
+                                            {msg.senderID === userIDRef.current
+                                                ? `${name} (you)`
+                                                : msg.senderName || userMap[msg.senderID] || "Unknown"}:
+                                        </strong>{" "}
+                                        {msg.text}
+                                    </div>
+                                ))}
+                                {status.startsWith("Partner disconnected") && (
+                                    <div
+                                        className="system-message text-center"
+                                        style={{
+                                            width: "100%",
+                                            backgroundColor: theme === "dark" ? "#444" : "#eee",
+                                            color: theme === "dark" ? "#eee" : "#444",
+                                            padding: "8px",
+                                            borderRadius: "8px",
+                                            marginBottom: "8px",
+                                            fontSize: "14px",
+                                            fontStyle: "italic",
+                                        }}
+                                    >
+                                        {status}
+                                    </div>
+                                )}
+                            </div>
+
+                            <InputGroup className="mt-0">
+                                <Form.Control
+                                    type="text"
+                                    placeholder="Type a message..."
+                                    value={newMessage}
+                                    onChange={(e) => setNewMessage(e.target.value)}
+                                    onKeyDown={handleKeyPress}
+                                    disabled={isConnecting}
+                                />
+                                <Button variant="primary" onClick={sendMessage} disabled={isConnecting}>
+                                    <FaPaperPlane />
+                                </Button>
+                                <Button variant="success" className="ms-2" onClick={startVideoCall} disabled={isConnecting}>
+                                    <FaVideo />
+                                </Button>
+                            </InputGroup>
+                            <div className="d-grid gap-2 mt-2">
+                                <Button variant="warning" onClick={skipToNextUser} disabled={isConnecting}>
+                                    Skip to Next
+                                </Button>
+                                <Button variant="secondary" onClick={goBackToHome} disabled={isConnecting}>
+                                    Change Nickname
+                                </Button>
+                            </div>
+                        </Col>
+                    </Row>
+                )}
+            </Container>
+        </div>
+    );
 };
 
 export default Chat;
