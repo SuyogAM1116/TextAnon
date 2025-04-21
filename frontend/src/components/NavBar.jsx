@@ -1,6 +1,6 @@
 import React, { useContext } from "react";
 import { useNavigate } from "react-router-dom";
-import { Navbar, Container, Nav } from "react-bootstrap";
+import { Navbar, Container, Nav, Button } from "react-bootstrap";
 import { FaLock, FaInfoCircle, FaCog } from "react-icons/fa";
 import ThemeToggle from "./ThemeToggle";
 import { ThemeContext } from "../components/ThemeContext"; // Import ThemeContext
@@ -8,6 +8,10 @@ import { ThemeContext } from "../components/ThemeContext"; // Import ThemeContex
 const NavBar = () => {
   const { theme, darkModeEnabled } = useContext(ThemeContext);
   const navigate = useNavigate();
+
+  const openSettingsInNewTab = () => {
+    window.open("/settings", "_blank");
+  };
 
   return (
     <Navbar
@@ -48,7 +52,7 @@ const NavBar = () => {
               <FaInfoCircle className={theme === "dark" ? "text-white" : "text-dark"} size={30} />
             </Nav.Link>
 
-            <Nav.Link onClick={() => navigate("/settings")} className="ms-3" style={{ cursor: "pointer" }}>
+            <Nav.Link onClick={openSettingsInNewTab} className="ms-3" style={{ cursor: "pointer" }}>
               <FaCog className={theme === "dark" ? "text-white" : "text-dark"} size={30} />
             </Nav.Link>
 

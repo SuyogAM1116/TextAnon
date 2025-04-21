@@ -5,10 +5,7 @@ import { Button } from "react-bootstrap";
 import { FaMoon, FaSun, FaClock, FaFont, FaVideo, FaMicrophoneSlash, FaCamera, FaArrowLeft } from "react-icons/fa";
 
 const Settings = () => {
-  const { theme, setTheme, darkModeEnabled, setDarkModeEnabled } = useContext(ThemeContext);
-  const [selfDestruct, setSelfDestruct] = useState(false);
-  const [destructTime, setDestructTime] = useState("5min");
-  const [customTime, setCustomTime] = useState("");
+  const { theme, setTheme, darkModeEnabled, setDarkModeEnabled, selfDestructEnabled, setSelfDestructEnabled, destructTime, setDestructTime, customTime, setCustomTime } = useContext(ThemeContext);
 
   return (
     <div
@@ -47,12 +44,12 @@ const Settings = () => {
           <FaClock className="me-2" /> Self-Destructing Messages:
           <input
             type="checkbox"
-            checked={selfDestruct}
-            onChange={() => setSelfDestruct(!selfDestruct)}
+            checked={selfDestructEnabled}
+            onChange={() => setSelfDestructEnabled(!selfDestructEnabled)}
           />
         </label>
 
-        {selfDestruct && (
+        {selfDestructEnabled && (
           <label style={optionStyle}>
             Self-Destruction Time:
             <select
@@ -68,7 +65,7 @@ const Settings = () => {
           </label>
         )}
 
-        {selfDestruct && destructTime === "custom" && (
+        {selfDestructEnabled && destructTime === "custom" && (
           <label style={optionStyle}>
             Enter Custom Time (in minutes):
             <input

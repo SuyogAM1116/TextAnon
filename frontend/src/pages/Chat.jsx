@@ -5,7 +5,7 @@ import { ThemeContext } from "../components/ThemeContext";
 import CryptoJS from 'crypto-js';
 
 const Chat = () => {
-    const { theme } = useContext(ThemeContext);
+    const { theme, selfDestructEnabled, destructTime, customTime } = useContext(ThemeContext);
     const [name, setName] = useState("");
     const [sessionID] = useState(() => Math.random().toString(36).substring(2));
     const [chatStarted, setChatStarted] = useState(false);
@@ -18,14 +18,14 @@ const Chat = () => {
     const chatContainerRef = useRef(null);
     const socketRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
-    const encryptionKeyRef = useRef(null); // Initialize as null - key will be received or generated
+    const encryptionKeyRef = useRef(null);
 
     useEffect(() => {
-        if (!encryptionKeyRef.current) { // Generate key only if not already received
-            encryptionKeyRef.current = CryptoJS.lib.WordArray.random(32).toString(); // Generate key initially
-            console.log("Generated Initial Encryption Key (User 1):", encryptionKeyRef.current.substring(0, 10) + "..."); // Log initial key generation
+        if (!encryptionKeyRef.current) {
+            encryptionKeyRef.current = CryptoJS.lib.WordArray.random(32).toString();
+            console.log("Generated Initial Encryption Key (User 1):", encryptionKeyRef.current.substring(0, 10) + "...");
         } else {
-            console.log("Encryption Key already set (User 2 received key):", encryptionKeyRef.current.substring(0, 10) + "..."); // Log when key is already set (received)
+            console.log("Encryption Key already set (User 2 received key):", encryptionKeyRef.current.substring(0, 10) + "...");
         }
 
         if (chatStarted) {
@@ -62,7 +62,7 @@ const Chat = () => {
                 type: "register",
                 name,
                 sessionID,
-                encryptionKey: encryptionKeyRef.current // Send encryption key to server
+                encryptionKey: encryptionKeyRef.current
             }));
             clearTimeout(reconnectTimeoutRef.current);
         };
@@ -156,8 +156,8 @@ const Chat = () => {
             [received.senderID]: received.senderName,
         }));
 
-        console.log("Received encrypted message:", received.text); // Log received encrypted message
-        console.log("Attempting decryption with key:", encryptionKeyRef.current.substring(0, 10) + "..."); // Log key used for decryption
+        console.log("Received encrypted message:", received.text);
+        console.log("Attempting decryption with key:", encryptionKeyRef.current.substring(0, 10) + "...");
 
         let decryptedText;
         try {
@@ -167,7 +167,7 @@ const Chat = () => {
                 decryptedText = "<Message decryption failed>";
                 console.warn("Decryption failed for message:", received.text);
             } else {
-                console.log("Successfully decrypted message:", decryptedText); // Log successful decryption
+                console.log("Successfully decrypted message:", decryptedText);
             }
         } catch (e) {
             console.error("Decryption error:", e);
@@ -179,6 +179,7 @@ const Chat = () => {
                 senderID: received.senderID,
                 senderName: received.senderName,
                 text: decryptedText,
+                timestamp: Date.now() // Add timestamp
             }];
             return updatedMessages;
         });
@@ -232,8 +233,8 @@ const Chat = () => {
     };
 
     const handleEncryptionKeyMessage = (received) => {
-        encryptionKeyRef.current = received.key; // Set the received key
-        console.log("Received Encryption Key from Partner (User 2):", encryptionKeyRef.current.substring(0, 10) + "..."); // Log received key
+        encryptionKeyRef.current = received.key;
+        console.log("Received Encryption Key from Partner (User 2):", encryptionKeyRef.current.substring(0, 10) + "...");
     };
 
 
@@ -253,18 +254,19 @@ const Chat = () => {
             return;
         }
 
-        console.log("Encryption Key used for sending:", encryptionKeyRef.current.substring(0, 10) + "..."); // Log key used for encryption
-        console.log("Plain text message to encrypt:", newMessage); // Log plain text message
+        console.log("Encryption Key used for sending:", encryptionKeyRef.current.substring(0, 10) + "...");
+        console.log("Plain text message to encrypt:", newMessage);
 
         const encryptedMessageText = CryptoJS.AES.encrypt(newMessage, encryptionKeyRef.current).toString();
 
-        console.log("Encrypted message sent:", encryptedMessageText); // Log encrypted message sent
+        console.log("Encrypted message sent:", encryptedMessageText);
 
         const messageData = {
             type: "chat",
             senderID: userIDRef.current,
             senderName: name,
             text: encryptedMessageText,
+            timestamp: Date.now() // Add timestamp
         };
 
         socketRef.current.send(JSON.stringify(messageData));
@@ -316,6 +318,35 @@ const Chat = () => {
         }
     };
 
+    // Re-run cleanupOldMessages whenever selfDestructEnabled, destructTime, or customTime changes
+    useEffect(() => {
+        cleanupOldMessages();
+    }, [selfDestructEnabled, destructTime, customTime]);
+
+    const cleanupOldMessages = () => {
+        let destructionTimeMs;
+        if (destructTime === "custom") {
+            destructionTimeMs = parseInt(customTime, 10) * 60000;
+        } else {
+            switch (destructTime) {
+                case "2min":
+                    destructionTimeMs = 2 * 60000;
+                    break;
+                case "5min":
+                    destructionTimeMs = 5 * 60000;
+                    break;
+                case "10min":
+                    destructionTimeMs = 10 * 60000;
+                    break;
+                default:
+                    destructionTimeMs = 5 * 60000; // Default to 5 minutes
+            }
+        }
+
+        const now = Date.now();
+        const newMessages = messages.filter(msg => now - msg.timestamp < destructionTimeMs);
+        setMessages(newMessages);
+    };
 
     return (
         <div
