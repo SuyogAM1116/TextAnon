@@ -19,6 +19,7 @@ const Chat = () => {
     const socketRef = useRef(null);
     const reconnectTimeoutRef = useRef(null);
     const encryptionKeyRef = useRef(null);
+    const intervalIdRef = useRef(null); // Store the interval ID
 
     useEffect(() => {
         if (!encryptionKeyRef.current) {
@@ -52,7 +53,7 @@ const Chat = () => {
         setStatus("Connecting to chat server...");
         setIsConnecting(true);
         socketRef.current = new WebSocket("wss://textanon.onrender.com");
-        console.log("WebSocket connecting to: wss://textanon.onrender.com");
+        console.log("WebSocket connecting to: ws://localhost:8080");
 
         socketRef.current.onopen = () => {
             console.log("WebSocket onopen: Connected to WebSocket Server");
@@ -318,10 +319,19 @@ const Chat = () => {
         }
     };
 
-    // Re-run cleanupOldMessages whenever selfDestructEnabled, destructTime, or customTime changes
     useEffect(() => {
-        cleanupOldMessages();
-    }, [selfDestructEnabled, destructTime, customTime]);
+        if (selfDestructEnabled) {
+            intervalIdRef.current = setInterval(() => {
+                cleanupOldMessages();
+            }, 60000); // Check every minute
+        } else {
+            clearInterval(intervalIdRef.current); // Clear the interval if disabled
+        }
+
+        return () => {
+            clearInterval(intervalIdRef.current); // Clear the interval on unmount
+        };
+    }, [selfDestructEnabled]);
 
     const cleanupOldMessages = () => {
         let destructionTimeMs;
