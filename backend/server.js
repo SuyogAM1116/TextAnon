@@ -33,9 +33,7 @@ setInterval(() => {
     `HeapUsed=${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)}MB`
   );
 }, 30000); // Log every 30 seconds
-}, 30000); // Log every 30 seconds
 
-console.log(`🚀 WebSocket Server started on ws://0.0.0.0:${PORT}`);
 console.log(`🚀 WebSocket Server started on ws://0.0.0.0:${PORT}`);
 
 function logState(event) {
@@ -176,15 +174,6 @@ function pairUsers() {
   const [userID1, userID2] = Array.from(waitingQueue).slice(0, 2);
   const client1 = clients.get(userID1);
   const client2 = clients.get(userID2);
-  logState("pairUsers - Entry");
-  if (waitingQueue.size < 2) {
-    console.log(`⏳ pairUsers: Not enough users in queue (${waitingQueue.size})`);
-    return;
-  }
-
-  const [userID1, userID2] = Array.from(waitingQueue).slice(0, 2);
-  const client1 = clients.get(userID1);
-  const client2 = clients.get(userID2);
 
   if (
     !client1?.socket ||
@@ -198,30 +187,7 @@ function pairUsers() {
     waitingQueue.delete(userID2);
     return;
   }
-  if (
-    !client1?.socket ||
-    !client2?.socket ||
-    client1.socket.readyState !== WebSocket.OPEN ||
-    client2.socket.readyState !== WebSocket.OPEN ||
-    client1.socket === client2.socket
-  ) {
-    console.warn(`⚠️ pairUsers: Skipped pairing due to invalid or closed socket(s) for ${userID1} or ${userID2}`);
-    waitingQueue.delete(userID1);
-    waitingQueue.delete(userID2);
-    return;
-  }
 
-  if (pairs.has(userID1) || pairs.has(userID2)) {
-    console.warn(`⚠️ pairUsers: Skipped pairing for ${userID1} and ${userID2} as one or both are already paired`);
-    waitingQueue.delete(userID1);
-    waitingQueue.delete(userID2);
-    return;
-  }
-
-  waitingQueue.delete(userID1);
-  waitingQueue.delete(userID2);
-  pairs.set(userID1, userID2);
-  pairs.set(userID2, userID1);
   if (pairs.has(userID1) || pairs.has(userID2)) {
     console.warn(`⚠️ pairUsers: Skipped pairing for ${userID1} and ${userID2} as one or both are already paired`);
     waitingQueue.delete(userID1);
@@ -279,12 +245,6 @@ function removeFromQueue(userID) {
 
 function handleDisconnection(userID) {
   logState("handleDisconnection - Entry");
-function removeFromQueue(userID) {
-  waitingQueue.delete(userID);
-}
-
-function handleDisconnection(userID) {
-  logState("handleDisconnection - Entry");
   const client = clients.get(userID);
   if (!client) return;
 
@@ -303,60 +263,7 @@ function handleDisconnection(userID) {
       partner.socket.send(JSON.stringify({ type: "chatEnded" }));
       waitingQueue.add(partnerID);
     }
-  if (!client) return;
-
-  const partnerID = pairs.get(userID);
-  if (partnerID) {
-    const partner = clients.get(partnerID);
-    if (partner?.socket?.readyState === WebSocket.OPEN) {
-      console.log(`📢 Notifying partner User ${partnerID} about disconnection of User ${userID}`);
-      partner.socket.send(
-        JSON.stringify({
-          type: "systemMessage",
-          sender: "System",
-          text: "Your partner has left. Finding a new match...",
-        })
-      );
-      partner.socket.send(JSON.stringify({ type: "chatEnded" }));
-      waitingQueue.add(partnerID);
-    }
     pairs.delete(userID);
-    pairs.delete(partnerID);
-  }
-
-  removeFromQueue(userID);
-  clients.delete(userID);
-
-  pairUsers();
-  logState("handleDisconnection - Exit");
-}
-
-function handleSkip(userID) {
-  logState("handleSkip - Entry");
-  const client = clients.get(userID);
-  if (!client) return;
-
-  const partnerID = pairs.get(userID);
-  if (partnerID) {
-    const partner = clients.get(partnerID);
-    if (partner?.socket?.readyState === WebSocket.OPEN) {
-      console.log(`📢 Notifying partner User ${partnerID} about skip by User ${userID}`);
-      partner.socket.send(
-        JSON.stringify({
-          type: "systemMessage",
-          sender: "System",
-          text: "Your partner has skipped. Finding a new match...",
-        })
-      );
-      partner.socket.send(JSON.stringify({ type: "chatEnded" }));
-      waitingQueue.add(partnerID);
-    }
-    pairs.delete(userID);
-    pairs.delete(partnerID);
-  }
-
-  if (client.socket.readyState === WebSocket.OPEN) {
-    waitingQueue.add(userID);
     pairs.delete(partnerID);
   }
 
@@ -559,24 +466,6 @@ server.on("connection", (socket) => {
               signal: parsedMessage.signal,
             })
           );
-          console.warn(`⚠️ No valid partner for User ${senderUserID} to initiate video call`);
-          socket.send(
-            JSON.stringify({
-              type: "systemMessage",
-              sender: "System",
-              text: "No partner available to start the video call.",
-            })
-          );
-        }
-      } else if (parsedMessage.type === "acceptCall") {
-        if (partnerSocket?.readyState === WebSocket.OPEN) {
-          console.log(`✅ User ${senderUserID} accepted video call from Partner ${partnerUserID} with signal:`, parsedMessage.signal);
-          partnerSocket.send(
-            JSON.stringify({
-              type: "callAccepted",
-              signal: parsedMessage.signal,
-            })
-          );
         } else {
           console.warn(`⚠️ No valid partner for User ${senderUserID} to accept video call`);
           socket.send(
@@ -596,26 +485,7 @@ server.on("connection", (socket) => {
               candidate: parsedMessage.candidate,
             })
           );
-          console.warn(`⚠️ No valid partner for User ${senderUserID} to accept video call`);
-          socket.send(
-            JSON.stringify({
-              type: "systemMessage",
-              sender: "System",
-              text: "No partner available to accept the video call.",
-            })
-          );
-        }
-      } else if (parsedMessage.type === "ice-candidate") {
-        if (partnerSocket?.readyState === WebSocket.OPEN) {
-          console.log(`🧊 User ${senderUserID} sending ICE candidate to Partner ${partnerUserID}:`, parsedMessage.candidate);
-          partnerSocket.send(
-            JSON.stringify({
-              type: "ice-candidate",
-              candidate: parsedMessage.candidate,
-            })
-          );
         } else {
-          console.warn(`⚠️ No valid partner for User ${senderUserID} to send ICE candidate`);
           console.warn(`⚠️ No valid partner for User ${senderUserID} to send ICE candidate`);
         }
       }
@@ -634,20 +504,14 @@ server.on("connection", (socket) => {
   socket.on("close", () => {
     console.log(`❌ User ${userID} disconnected`);
     handleDisconnection(userID);
-  socket.on("close", () => {
-    console.log(`❌ User ${userID} disconnected`);
-    handleDisconnection(userID);
   });
 
   socket.on("error", (error) => {
-    console.error(`⚠️ WebSocket Error for User ${userID}:`, error.message);
-    handleDisconnection(userID);
     console.error(`⚠️ WebSocket Error for User ${userID}:`, error.message);
     handleDisconnection(userID);
   });
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`Server started on port ${PORT}`);
   console.log(`Server started on port ${PORT}`);
 });
