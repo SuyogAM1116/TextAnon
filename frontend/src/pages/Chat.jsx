@@ -26,6 +26,7 @@ const Chat = () => {
     const [status, setStatus] = useState("Connecting you with a partner...");
     const [isConnecting, setIsConnecting] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
+    const [pendingMessages, setPendingMessages] = useState([]); // Queue for messages awaiting key
     const userIDRef = useRef(null);
     const chatContainerRef = useRef(null);
     const socketRef = useRef(null);
@@ -46,8 +47,10 @@ const Chat = () => {
     useEffect(() => {
         console.log("[Effect Main] Running. chatStarted:", chatStarted);
         if (chatStarted && !encryptionKeyRef.current) {
-            encryptionKeyRef.current = CryptoJS.lib.WordArray.random(32).toString();
-            console.log("Generated Initial Encryption Key:", encryptionKeyRef.current.substring(0, 10) + "...");
+            // Generate 32-byte key as hex string
+            const keyBytes = CryptoJS.lib.WordArray.random(32);
+            encryptionKeyRef.current = keyBytes.toString(CryptoJS.enc.Hex);
+            console.log("Generated Initial Encryption Key:", encryptionKeyRef.current.substring(0, 8) + "...");
         }
         if (chatStarted) connectWebSocket();
         return () => {
@@ -163,7 +166,8 @@ const Chat = () => {
 
     const handleChatMessage = (received) => {
         if (!encryptionKeyRef.current) {
-            console.error("ChatMsg: No key");
+            console.warn("ChatMsg: No key, queuing message");
+            setPendingMessages((prev) => [...prev, received]);
             return;
         }
         if (received.senderID !== userIDRef.current && !status.startsWith("You are now connected")) {
@@ -172,12 +176,55 @@ const Chat = () => {
         setUserMap((prev) => ({ ...prev, [received.senderID]: received.senderName }));
         let decryptedText;
         try {
-            const b = CryptoJS.AES.decrypt(received.text, encryptionKeyRef.current);
-            decryptedText = b.toString(CryptoJS.enc.Utf8);
-            if (!decryptedText) decryptedText = "<Decryption Failed>";
+            if (!received.text || typeof received.text !== 'string') {
+                throw new Error("Invalid ciphertext: empty or not a string");
+            }
+            // Log raw input for debugging
+            console.log(`Decrypting Input: Ciphertext="${received.text.substring(0, 20)}...", Length=${received.text.length}`);
+            // Decode base64
+            let encryptedBytes;
+            try {
+                encryptedBytes = CryptoJS.enc.Base64.parse(received.text);
+            } catch (e) {
+                throw new Error(`Invalid base64 encoding: ${e.message}`);
+            }
+            console.log(`Decrypting Decoded: ByteLength=${encryptedBytes.sigBytes}`);
+            if (encryptedBytes.sigBytes < 16) {
+                throw new Error(`Ciphertext too short: got ${encryptedBytes.sigBytes} bytes, expected at least 16`);
+            }
+            // Extract IV (first 16 bytes) and ciphertext
+            const iv = encryptedBytes.clone();
+            iv.sigBytes = 16;
+            iv.clamp();
+            const ciphertext = encryptedBytes.clone();
+            ciphertext.words = ciphertext.words.slice(4); // Skip first 16 bytes (4 words)
+            ciphertext.sigBytes -= 16;
+            if (ciphertext.sigBytes === 0) {
+                throw new Error("No ciphertext after IV");
+            }
+            // Validate key
+            if (!/^[0-9a-fA-F]{64}$/.test(encryptionKeyRef.current)) {
+                throw new Error(`Invalid key format: ${encryptionKeyRef.current}`);
+            }
+            console.log(
+                `Decrypting: Key=${encryptionKeyRef.current.substring(0, 8)}..., ` +
+                `IV=${iv.toString(CryptoJS.enc.Hex).substring(0, 8)}..., ` +
+                `CiphertextLength=${ciphertext.sigBytes}`
+            );
+            // Decrypt
+            const decrypted = CryptoJS.AES.decrypt(
+                { ciphertext: ciphertext },
+                CryptoJS.enc.Hex.parse(encryptionKeyRef.current),
+                { iv: iv }
+            );
+            decryptedText = decrypted.toString(CryptoJS.enc.Utf8);
+            if (!decryptedText) {
+                throw new Error("Decryption produced empty result");
+            }
+            console.log(`Decrypting Success: Decrypted="${decryptedText.substring(0, 10)}..."`);
         } catch (e) {
-            decryptedText = "<Decryption Error>";
-            console.error("Decrypt Err:", e);
+            decryptedText = `<Decryption Failed: ${e.message}>`;
+            console.error(`Decrypt Error: ${e.message}, Ciphertext="${received.text.substring(0, 20)}..."`);
         }
         const serverTimestamp = received.timestamp;
         logTimestamp("handleChatMessage - Received server timestamp", serverTimestamp);
@@ -202,9 +249,55 @@ const Chat = () => {
         const decrypted = received.messages.map(msg => {
             let dt;
             try {
-                dt = CryptoJS.AES.decrypt(msg.text, encryptionKeyRef.current).toString(CryptoJS.enc.Utf8) || "<Hist Decrypt Fail>";
+                if (!msg.text || typeof msg.text !== 'string') {
+                    throw new Error("Invalid ciphertext in history");
+                }
+                // Log raw input for debugging
+                console.log(`History Decrypting Input: Ciphertext="${msg.text.substring(0, 20)}...", Length=${msg.text.length}`);
+                // Decode base64
+                let encryptedBytes;
+                try {
+                    encryptedBytes = CryptoJS.enc.Base64.parse(msg.text);
+                } catch (e) {
+                    throw new Error(`Invalid base64 encoding in history: ${e.message}`);
+                }
+                console.log(`History Decrypting Decoded: ByteLength=${encryptedBytes.sigBytes}`);
+                if (encryptedBytes.sigBytes < 16) {
+                    throw new Error(`History ciphertext too short: got ${encryptedBytes.sigBytes} bytes`);
+                }
+                // Extract IV and ciphertext
+                const iv = encryptedBytes.clone();
+                iv.sigBytes = 16;
+                iv.clamp();
+                const ciphertext = encryptedBytes.clone();
+                ciphertext.words = ciphertext.words.slice(4);
+                ciphertext.sigBytes -= 16;
+                if (ciphertext.sigBytes === 0) {
+                    throw new Error("No ciphertext after IV in history");
+                }
+                // Validate key
+                if (!/^[0-9a-fA-F]{64}$/.test(encryptionKeyRef.current)) {
+                    throw new Error(`Invalid key format in history: ${encryptionKeyRef.current}`);
+                }
+                console.log(
+                    `History Decrypting: Key=${encryptionKeyRef.current.substring(0, 8)}..., ` +
+                    `IV=${iv.toString(CryptoJS.enc.Hex).substring(0, 8)}..., ` +
+                    `CiphertextLength=${ciphertext.sigBytes}`
+                );
+                // Decrypt
+                const decrypted = CryptoJS.AES.decrypt(
+                    { ciphertext: ciphertext },
+                    CryptoJS.enc.Hex.parse(encryptionKeyRef.current),
+                    { iv: iv }
+                );
+                dt = decrypted.toString(CryptoJS.enc.Utf8);
+                if (!dt) {
+                    throw new Error("History decryption produced empty result");
+                }
+                console.log(`History Decrypting Success: Decrypted="${dt.substring(0, 10)}..."`);
             } catch (e) {
-                dt = "<Hist Decrypt Err>";
+                dt = `<Hist Decrypt Failed: ${e.message}>`;
+                console.error(`History Decrypt Error: ${e.message}, Ciphertext="${msg.text.substring(0, 20)}..."`);
             }
             const ts = msg.timestamp || Date.now();
             logTimestamp(`History Msg "${dt.substring(0,10)}..."`, ts);
@@ -228,6 +321,12 @@ const Chat = () => {
     const handleSystemMessage = (received) => {
         setStatus(received.text);
         console.log("Sys Msg:", received.text);
+        setMessages((prev) => [...prev, {
+            senderID: "system",
+            senderName: "System",
+            text: received.text,
+            timestamp: Date.now()
+        }]);
     };
 
     const handleChatEndedMessage = () => {
@@ -236,23 +335,29 @@ const Chat = () => {
         setUserMap({});
         setStatus("Partner disconnected. Finding partner...");
         encryptionKeyRef.current = null;
+        setPendingMessages([]);
         setIsMuted(false);
         console.log("Key cleared (disconnect).");
     };
 
     const handleEncryptionKeyMessage = (received) => {
-        if (received.key) {
+        if (received.key && typeof received.key === 'string' && /^[0-9a-fA-F]{64}$/.test(received.key)) {
             encryptionKeyRef.current = received.key;
-            console.log("Received/Set Key:", received.key.substring(0,10)+"...");
+            console.log("Received/Set Key:", received.key.substring(0, 8) + "...");
+            // Process pending messages
+            if (pendingMessages.length > 0) {
+                console.log(`Processing ${pendingMessages.length} pending messages`);
+                pendingMessages.forEach(msg => handleChatMessage(msg));
+                setPendingMessages([]);
+            }
         } else {
-            console.warn("Received empty key msg.");
+            console.warn("Received invalid or empty key msg:", received);
         }
     };
 
     const handleModerationWarning = (received) => {
         setStatus(received.text);
         console.log("Moderation Warning:", received.text);
-        // Display warning in chat box for better visibility
         setMessages((prev) => [...prev, {
             senderID: "system",
             senderName: "System",
@@ -296,10 +401,45 @@ const Chat = () => {
         }
         let encrypted;
         try {
-            encrypted = CryptoJS.AES.encrypt(newMessage, encryptionKeyRef.current).toString();
+            // Validate key
+            if (!/^[0-9a-fA-F]{64}$/.test(encryptionKeyRef.current)) {
+                throw new Error(`Invalid key format: ${encryptionKeyRef.current}`);
+            }
+            // Validate message
+            if (!newMessage || newMessage.trim() === "") {
+                throw new Error("Message is empty");
+            }
+            // Generate random IV
+            const iv = CryptoJS.lib.WordArray.random(16);
+            // Encrypt with raw key
+            const encryptedData = CryptoJS.AES.encrypt(
+                newMessage,
+                CryptoJS.enc.Hex.parse(encryptionKeyRef.current),
+                { iv: iv }
+            );
+            // Validate ciphertext
+            if (!encryptedData.ciphertext || encryptedData.ciphertext.sigBytes === 0) {
+                throw new Error("Encryption produced empty ciphertext");
+            }
+            // Combine IV and ciphertext
+            const combined = iv.concat(encryptedData.ciphertext);
+            encrypted = CryptoJS.enc.Base64.stringify(combined);
+            // Validate output length (IV: 16 bytes, Ciphertext: at least 16 bytes due to AES block size)
+            const byteLength = CryptoJS.enc.Base64.parse(encrypted).sigBytes;
+            if (byteLength < 32) {
+                throw new Error(`Encrypted output too short: got ${byteLength} bytes, expected at least 32`);
+            }
+            console.log(
+                `Encrypting Success: Key=${encryptionKeyRef.current.substring(0, 8)}..., ` +
+                `IV=${iv.toString(CryptoJS.enc.Hex).substring(0, 8)}..., ` +
+                `CiphertextLength=${encryptedData.ciphertext.sigBytes}, ` +
+                `OutputLength=${byteLength}, ` +
+                `Output="${encrypted.substring(0, 20)}...", ` +
+                `Text="${newMessage.substring(0, 10)}..."`
+            );
         } catch (e) {
-            console.error("Encrypt Err:", e);
-            setStatus("Send Error");
+            console.error(`Encrypt Error: ${e.message}`);
+            setStatus("Encryption error. Please try again.");
             return;
         }
         const timestamp = Date.now();
@@ -331,6 +471,7 @@ const Chat = () => {
             setUserMap({});
             setStatus("Finding partner...");
             encryptionKeyRef.current = null;
+            setPendingMessages([]);
             setIsMuted(false);
             console.log("Key cleared (skip).");
         } else {
@@ -356,6 +497,7 @@ const Chat = () => {
         setStatus("Disconnected.");
         userIDRef.current = null;
         encryptionKeyRef.current = null;
+        setPendingMessages([]);
         setIsMuted(false);
         console.log("Key cleared (Go Back).");
     };
