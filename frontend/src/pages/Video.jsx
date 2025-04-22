@@ -138,11 +138,13 @@ const Video = () => {
     if (username.trim() !== "") {
       setNameConfirmed(true);
       if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({
-          type: "register",
-          name: username,
-          encryptionKey: `key-${username}-${Date.now()}`
-        }));
+        socketRef.current.send(
+          JSON.stringify({
+            type: "register",
+            name: username,
+            encryptionKey: `key-${username}-${Date.now()}`,
+          })
+        );
         console.log(`${new Date().toLocaleTimeString()} - Sent register message for:`, username);
       } else {
         setMediaStatus("Cannot register: Signaling server not connected.");
@@ -167,6 +169,7 @@ const Video = () => {
       streamRef.current = currentStream;
       if (userVideoRef.current) {
         userVideoRef.current.srcObject = currentStream;
+        console.log(`${new Date().toLocaleTimeString()} - Local stream set with tracks:`, currentStream.getTracks());
       }
       setMediaStatus("Media devices ready, connecting...");
       initiatePeerConnection(currentStream);
@@ -187,6 +190,12 @@ const Video = () => {
         iceServers: [
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun1.l.google.com:19302" },
+          // Add TURN server if needed (example):
+          // {
+          //   urls: "turn:your-turn-server.com",
+          //   username: "username",
+          //   credential: "password",
+          // },
         ],
       },
     });
@@ -215,12 +224,25 @@ const Video = () => {
     });
 
     peer.on("stream", (remoteStream) => {
-      console.log(`${new Date().toLocaleTimeString()} - Initiator received remote stream`);
+      console.log(`${new Date().toLocaleTimeString()} - Initiator received remote stream with tracks:`, remoteStream.getTracks());
       if (partnerVideoRef.current) {
         partnerVideoRef.current.srcObject = remoteStream;
+        partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err));
+        console.log(`${new Date().toLocaleTimeString()} - Remote stream set to partnerVideoRef`);
+      } else {
+        console.error(`${new Date().toLocaleTimeString()} - partnerVideoRef is not available`);
       }
       setPeerConnected(true);
       setMediaStatus("Connected to peer");
+    });
+
+    peer.on("track", (track, stream) => {
+      console.log(`${new Date().toLocaleTimeString()} - Initiator received track:`, track, "in stream:", stream.getTracks());
+      if (partnerVideoRef.current) {
+        partnerVideoRef.current.srcObject = stream;
+        partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err));
+        console.log(`${new Date().toLocaleTimeString()} - Track stream set to partnerVideoRef`);
+      }
     });
 
     peer.on("connect", () => {
@@ -256,6 +278,7 @@ const Video = () => {
           streamRef.current = currentStream;
           if (userVideoRef.current) {
             userVideoRef.current.srcObject = currentStream;
+            console.log(`${new Date().toLocaleTimeString()} - Local stream set with tracks:`, currentStream.getTracks());
           }
 
           const peer = new Peer({
@@ -266,6 +289,7 @@ const Video = () => {
               iceServers: [
                 { urls: "stun:stun.l.google.com:19302" },
                 { urls: "stun:stun1.l.google.com:19302" },
+                // Add TURN server if needed
               ],
             },
           });
@@ -294,12 +318,25 @@ const Video = () => {
           });
 
           peer.on("stream", (remoteStream) => {
-            console.log(`${new Date().toLocaleTimeString()} - Answerer received remote stream`);
+            console.log(`${new Date().toLocaleTimeString()} - Answerer received remote stream with tracks:`, remoteStream.getTracks());
             if (partnerVideoRef.current) {
               partnerVideoRef.current.srcObject = remoteStream;
+              partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err));
+              console.log(`${new Date().toLocaleTimeString()} - Remote stream set to partnerVideoRef`);
+            } else {
+              console.error(`${new Date().toLocaleTimeString()} - partnerVideoRef is not available`);
             }
             setPeerConnected(true);
             setMediaStatus("Connected to peer");
+          });
+
+          peer.on("track", (track, stream) => {
+            console.log(`${new Date().toLocaleTimeString()} - Answerer received track:`, track, "in stream:", stream.getTracks());
+            if (partnerVideoRef.current) {
+              partnerVideoRef.current.srcObject = stream;
+              partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err));
+              console.log(`${new Date().toLocaleTimeString()} - Track stream set to partnerVideoRef`);
+            }
           });
 
           peer.on("connect", () => {
