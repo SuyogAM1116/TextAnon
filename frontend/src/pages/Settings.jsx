@@ -90,28 +90,7 @@ const Settings = () => {
       <h2 className="mb-4">Settings</h2>
 
       {/* General Section - Structure remains the same */}
-      <div style={sectionStyle(theme)} className="mb-3">
-        <h3 style={headerStyle}>General</h3>
-        <Form.Group as={Row} className="mb-0 align-items-center" controlId="darkModeEnableToggle"> {/* ID Updated */}
-          <Form.Label column sm="8">
-             {/* --- UPDATED LABEL --- */}
-            Dark Mode Feature: {/* Label reflects what the button controls */}
-          </Form.Label>
-          <Col sm="4" className="text-end">
-            {/* --- UPDATED BUTTON LOGIC --- */}
-            <Button
-              // Variant reflects if the FEATURE is currently enabled
-              variant={darkModeAllowed ? "outline-danger" : "outline-success"} // Danger to disable feature, Success to enable feature
-              onClick={handleDarkModeEnableToggle} // Calls the correct handler
-              size="sm"
-            >
-              {/* Text reflects if the FEATURE is currently enabled */}
-              {darkModeAllowed ? "Disable Feature" : "Enable Feature"}
-            </Button>
-            {/* --- End Update --- */}
-          </Col>
-        </Form.Group>
-      </div>
+      
 
       {/* Message and Chat Section (Structure remains the same) */}
       <div style={sectionStyle(theme)} className="mb-3">
