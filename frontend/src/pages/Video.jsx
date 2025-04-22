@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useContext } from "react";
+import React, { useEffect, useRef, useState, useContext, useCallback } from "react";
 import { ThemeContext } from "../components/ThemeContext";
 import Peer from "simple-peer";
 
@@ -262,7 +262,13 @@ const Video = () => {
       }
       if (partnerVideoRef.current) {
         partnerVideoRef.current.srcObject = remoteStream;
-        partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err));
+        playVideo(partnerVideoRef.current).catch((err) => {
+          console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err);
+          if (err.name === "AbortError") {
+            setMediaStatus("Video play interrupted. Retrying...");
+            setTimeout(() => playVideo(partnerVideoRef.current), 1000);
+          }
+        });
         console.log(`${new Date().toLocaleTimeString()} - Remote stream set to partnerVideoRef`);
       }
       setPeerConnected(true);
@@ -298,6 +304,14 @@ const Video = () => {
       cleanup();
     });
   };
+
+  const playVideo = useCallback(async (videoElement) => {
+    try {
+      await videoElement.play();
+    } catch (err) {
+      throw err;
+    }
+  }, []);
 
   useEffect(() => {
     if (receivingCall && !callAccepted && callerSignal) {
@@ -366,7 +380,13 @@ const Video = () => {
           }
           if (partnerVideoRef.current) {
             partnerVideoRef.current.srcObject = remoteStream;
-            partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err));
+            playVideo(partnerVideoRef.current).catch((err) => {
+              console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err);
+              if (err.name === "AbortError") {
+                setMediaStatus("Video play interrupted. Retrying...");
+                setTimeout(() => playVideo(partnerVideoRef.current), 1000);
+              }
+            });
             console.log(`${new Date().toLocaleTimeString()} - Remote stream set to partnerVideoRef`);
           }
           setPeerConnected(true);
@@ -411,7 +431,7 @@ const Video = () => {
         cleanup();
       });
     }
-  }, [receivingCall, callerSignal, wsConnected]);
+  }, [receivingCall, callerSignal, wsConnected, playVideo]);
 
   const endCall = () => {
     console.log(`${new Date().toLocaleTimeString()} - endCall: Ending call`);
