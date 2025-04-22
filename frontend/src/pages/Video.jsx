@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useContext, useCallback } from "react";
+import React, { useEffect, useRef, useState, useContext } from "react";
 import { ThemeContext } from "../components/ThemeContext";
 import Peer from "simple-peer";
 
@@ -20,8 +20,6 @@ const Video = () => {
   const [chatMessages, setChatMessages] = useState([]);
   const [encryptionKey, setEncryptionKey] = useState(null);
   const [iceConnectionState, setIceConnectionState] = useState("new");
-  const [callInitiated, setCallInitiated] = useState(false);
-  const [userID, setUserID] = useState(null); // Store the assigned userID
 
   const socketRef = useRef(null);
   const userVideoRef = useRef(null);
@@ -33,12 +31,15 @@ const Video = () => {
   const baseReconnectInterval = 3000;
   const signalSentRef = useRef(new Set());
 
-  const connectWebSocket = useCallback(() => {
-    if (reconnectAttempts.current >= maxReconnectAttempts || socketRef.current?.readyState === WebSocket.OPEN) {
+  const connectWebSocket = () => {
+    if (reconnectAttempts.current >= maxReconnectAttempts) {
+      console.error(`${new Date().toLocaleTimeString()} - Max WebSocket reconnection attempts reached`);
+      setMediaStatus("Failed to connect to signaling server. Please retry or refresh.");
+      setShowRetry(true);
       return;
     }
 
-    socketRef.current = new WebSocket("wss://textanon.onrender.com"); // Use localhost for testing
+    socketRef.current = new WebSocket("wss://textanon.onrender.com");
     console.log(`${new Date().toLocaleTimeString()} - WebSocket connecting to wss://textanon.onrender.com`);
 
     socketRef.current.onopen = () => {
@@ -47,11 +48,6 @@ const Video = () => {
       setMediaStatus("Connected to signaling server");
       setShowRetry(false);
       reconnectAttempts.current = 0;
-      if (username && !userID) {
-        socketRef.current.send(JSON.stringify({ type: "register", name: username, encryptionKey: `key-${username}-${Date.now()}` }));
-      } else if (userID) {
-        socketRef.current.send(JSON.stringify({ type: "reconnect", userID }));
-      }
     };
 
     socketRef.current.onerror = (error) => {
@@ -74,13 +70,10 @@ const Video = () => {
         const parsedMessage = JSON.parse(event.data);
         if (parsedMessage.type === "userID") {
           console.log(`${new Date().toLocaleTimeString()} - Received userID:`, parsedMessage.userID);
-          setUserID(parsedMessage.userID);
         } else if (parsedMessage.type === "hey") {
           console.log(`${new Date().toLocaleTimeString()} - Incoming call from:`, parsedMessage.callerID);
-          if (!callAccepted) {
-            setReceivingCall(true);
-            setCallerSignal(parsedMessage.signal);
-          }
+          setReceivingCall(true);
+          setCallerSignal(parsedMessage.signal);
         } else if (parsedMessage.type === "ice-candidate") {
           if (peerRef.current && parsedMessage.candidate) {
             console.log(`${new Date().toLocaleTimeString()} - Adding ICE candidate:`, parsedMessage.candidate);
@@ -98,15 +91,12 @@ const Video = () => {
         } else if (parsedMessage.type === "partnerConnected") {
           console.log(`${new Date().toLocaleTimeString()} - Partner connected:`, parsedMessage.partnerID);
           setMediaStatus("Connected to a partner");
-          setCallInitiated(false); // Reset for new connection
-        } else if (parsedMessage.type === "partnerDisconnected") {
-          console.log(`${new Date().toLocaleTimeString()} - Partner disconnected`);
-          setMediaStatus("Partner disconnected. Waiting for new match...");
-          setPeerConnected(false);
-          if (partnerVideoRef.current) partnerVideoRef.current.srcObject = null;
         } else if (parsedMessage.type === "chat") {
           console.log(`${new Date().toLocaleTimeString()} - Received chat from ${parsedMessage.senderName}:`, parsedMessage.text);
-          setChatMessages((prev) => [...prev, { sender: parsedMessage.senderName, text: parsedMessage.text }]);
+          setChatMessages((prev) => [
+            ...prev,
+            { sender: parsedMessage.senderName, text: parsedMessage.text },
+          ]);
         } else if (parsedMessage.type === "encryptionKey") {
           console.log(`${new Date().toLocaleTimeString()} - Received encryption key (start):`, parsedMessage.key.substring(0, 8) + "...");
           setEncryptionKey(parsedMessage.key);
@@ -116,15 +106,19 @@ const Video = () => {
           setEncryptionKey(null);
           setPeerConnected(false);
           setMediaStatus("Partner disconnected. Waiting for new match...");
-          if (partnerVideoRef.current) partnerVideoRef.current.srcObject = null;
-        } else if (parsedMessage.type === "pong") {
-          console.log(`${new Date().toLocaleTimeString()} - Received pong from server`);
         }
       } catch (error) {
         console.error(`${new Date().toLocaleTimeString()} - WebSocket message error:`, error);
       }
     };
-  }, [username, userID]);
+  };
+
+  const handleRetry = () => {
+    console.log(`${new Date().toLocaleTimeString()} - Manual retry initiated`);
+    reconnectAttempts.current = 0;
+    setShowRetry(false);
+    connectWebSocket();
+  };
 
   useEffect(() => {
     console.log(`${new Date().toLocaleTimeString()} - useEffect: Component mounted`);
@@ -133,7 +127,7 @@ const Video = () => {
       console.log(`${new Date().toLocaleTimeString()} - useEffect cleanup: Component unmounting`);
       cleanup();
     };
-  }, [connectWebSocket]);
+  }, []);
 
   const cleanup = () => {
     if (streamRef.current) {
@@ -161,30 +155,38 @@ const Video = () => {
     setCallerSignal(null);
     setCallAccepted(false);
     setPeerConnected(false);
-    setCallInitiated(false);
     setMediaStatus("Ready to start call");
     setChatMessages([]);
     setEncryptionKey(null);
     setIceConnectionState("new");
-    if (partnerVideoRef.current) partnerVideoRef.current.srcObject = null;
   };
 
   const handleNameConfirm = () => {
     if (username.trim() !== "") {
       setNameConfirmed(true);
-      connectWebSocket(); // Trigger WebSocket connection with username
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(
+          JSON.stringify({
+            type: "register",
+            name: username,
+            encryptionKey: `key-${username}-${Date.now()}`,
+          })
+        );
+        console.log(`${new Date().toLocaleTimeString()} - Sent register message for:`, username);
+      } else {
+        setMediaStatus("Cannot register: Signaling server not connected.");
+      }
     }
   };
 
   const startVideoCall = async () => {
-    if (!wsConnected || callInitiated || !userID) {
-      setMediaStatus("Cannot start call: Signaling server not connected, call already initiated, or no userID.");
+    if (!wsConnected) {
+      setMediaStatus("Cannot start call: Signaling server not connected.");
       return;
     }
 
     console.log(`${new Date().toLocaleTimeString()} - startVideoCall: Initiating call`);
     setCallStarted(true);
-    setCallInitiated(true);
     setMediaStatus("Getting media devices...");
 
     try {
@@ -193,21 +195,19 @@ const Video = () => {
       streamRef.current = currentStream;
       if (userVideoRef.current) {
         userVideoRef.current.srcObject = currentStream;
-        await playVideo(userVideoRef.current);
         console.log(`${new Date().toLocaleTimeString()} - Local stream set with tracks:`, currentStream.getTracks());
       }
       setMediaStatus("Media devices ready, connecting...");
+      signalSentRef.current.clear();
       initiatePeerConnection(currentStream);
     } catch (error) {
       console.error(`${new Date().toLocaleTimeString()} - getUserMedia error:`, error);
       setMediaStatus(`Error accessing media: ${error.message}`);
       setCallStarted(false);
-      setCallInitiated(false);
     }
   };
 
   const initiatePeerConnection = (currentStream) => {
-    if (peerRef.current) peerRef.current.destroy(); // Ensure only one peer instance
     const peer = new Peer({
       initiator: true,
       trickle: true,
@@ -262,13 +262,7 @@ const Video = () => {
       }
       if (partnerVideoRef.current) {
         partnerVideoRef.current.srcObject = remoteStream;
-        playVideo(partnerVideoRef.current).catch((err) => {
-          console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err);
-          if (err.name === "AbortError") {
-            setMediaStatus("Video play interrupted. Retrying...");
-            setTimeout(() => playVideo(partnerVideoRef.current), 1000);
-          }
-        });
+        partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err));
         console.log(`${new Date().toLocaleTimeString()} - Remote stream set to partnerVideoRef`);
       }
       setPeerConnected(true);
@@ -278,12 +272,16 @@ const Video = () => {
       console.log(`${new Date().toLocaleTimeString()} - Initiator peer connected`);
     });
 
-    peer.on("iceconnectionstatechange", (state) => {
+    peer.on("iceconnectionstatechange", () => {
       console.log(`${new Date().toLocaleTimeString()} - ICE connection state:`, peer.iceConnectionState);
       setIceConnectionState(peer.iceConnectionState);
       if (peer.iceConnectionState === "failed" || peer.iceConnectionState === "disconnected") {
-        console.error(`${new Date().toLocaleTimeString()} - ICE connection failed`);
-        setMediaStatus("WebRTC connection failed. Check network or TURN server.");
+        console.error(`${new Date().toLocaleTimeString()} - ICE connection failed, attempting reconnection`);
+        setMediaStatus("WebRTC connection failed. Attempting to reconnect...");
+        cleanup();
+        setTimeout(() => {
+          if (streamRef.current) initiatePeerConnection(streamRef.current);
+        }, 2000);
       } else if (peer.iceConnectionState === "connected") {
         setMediaStatus("Connected to peer");
       }
@@ -301,16 +299,8 @@ const Video = () => {
     });
   };
 
-  const playVideo = useCallback(async (videoElement) => {
-    try {
-      await videoElement.play();
-    } catch (err) {
-      throw err;
-    }
-  }, []);
-
   useEffect(() => {
-    if (receivingCall && !callAccepted && callerSignal && !callInitiated) {
+    if (receivingCall && !callAccepted && callerSignal) {
       if (!wsConnected) {
         setMediaStatus("Cannot answer call: Signaling server not connected.");
         return;
@@ -322,7 +312,6 @@ const Video = () => {
         streamRef.current = currentStream;
         if (userVideoRef.current) {
           userVideoRef.current.srcObject = currentStream;
-          playVideo(userVideoRef.current).catch((err) => console.error(`${new Date().toLocaleTimeString()} - Local video play error:`, err));
           console.log(`${new Date().toLocaleTimeString()} - Local stream set with tracks:`, currentStream.getTracks());
         }
 
@@ -340,9 +329,9 @@ const Video = () => {
                 credential: "openrelayproject",
               },
               {
-                urls: "turn:turn.anyfirewall.com:443", // Alternative TURN server
-                username: "username",
-                credential: "password",
+                urls: "turn:openrelay.metered.ca:443",
+                username: "openrelayproject",
+                credential: "openrelayproject",
               },
             ],
           },
@@ -377,13 +366,7 @@ const Video = () => {
           }
           if (partnerVideoRef.current) {
             partnerVideoRef.current.srcObject = remoteStream;
-            playVideo(partnerVideoRef.current).catch((err) => {
-              console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err);
-              if (err.name === "AbortError") {
-                setMediaStatus("Video play interrupted. Retrying...");
-                setTimeout(() => playVideo(partnerVideoRef.current), 1000);
-              }
-            });
+            partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err));
             console.log(`${new Date().toLocaleTimeString()} - Remote stream set to partnerVideoRef`);
           }
           setPeerConnected(true);
@@ -393,12 +376,16 @@ const Video = () => {
           console.log(`${new Date().toLocaleTimeString()} - Answerer peer connected`);
         });
 
-        peer.on("iceconnectionstatechange", (state) => {
+        peer.on("iceconnectionstatechange", () => {
           console.log(`${new Date().toLocaleTimeString()} - ICE connection state:`, peer.iceConnectionState);
           setIceConnectionState(peer.iceConnectionState);
           if (peer.iceConnectionState === "failed" || peer.iceConnectionState === "disconnected") {
-            console.error(`${new Date().toLocaleTimeString()} - ICE connection failed`);
-            setMediaStatus("WebRTC connection failed. Check network or TURN server.");
+            console.error(`${new Date().toLocaleTimeString()} - ICE connection failed, attempting reconnection`);
+            setMediaStatus("WebRTC connection failed. Attempting to reconnect...");
+            cleanup();
+            setTimeout(() => {
+              if (streamRef.current) initiatePeerConnection(streamRef.current);
+            }, 2000);
           } else if (peer.iceConnectionState === "connected") {
             setMediaStatus("Connected to peer");
           }
@@ -418,29 +405,25 @@ const Video = () => {
         peer.signal(callerSignal);
         setCallAccepted(true);
         setCallStarted(true);
-        setCallInitiated(true);
       }).catch((error) => {
         console.error(`${new Date().toLocaleTimeString()} - Answerer getUserMedia error:`, error);
         setMediaStatus(`Error accessing media: ${error.message}`);
         cleanup();
       });
     }
-  }, [receivingCall, callerSignal, wsConnected, playVideo, callInitiated]);
+  }, [receivingCall, callerSignal, wsConnected]);
 
   const endCall = () => {
     console.log(`${new Date().toLocaleTimeString()} - endCall: Ending call`);
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: "skip" }));
-    }
     cleanup();
   };
 
   const handleSkip = () => {
     console.log(`${new Date().toLocaleTimeString()} - handleSkip: Skipping to next call`);
+    cleanup();
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: "skip" }));
     }
-    cleanup();
     setTimeout(() => startVideoCall(), 1000);
   };
 
@@ -471,15 +454,6 @@ const Video = () => {
       console.log(`${new Date().toLocaleTimeString()} - Sent chat message:`, text);
     }
   };
-
-  useEffect(() => {
-    const pingInterval = setInterval(() => {
-      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({ type: "ping" }));
-      }
-    }, 25000);
-    return () => clearInterval(pingInterval);
-  }, []);
 
   return (
     <div
@@ -522,7 +496,7 @@ const Video = () => {
         <div style={{ textAlign: "center" }}>
           <h2>Anonymous Video Call</h2>
           <p>Status: {mediaStatus}</p>
-          <button onClick={startVideoCall} style={startButtonStyle} disabled={!wsConnected || callInitiated}>
+          <button onClick={startVideoCall} style={startButtonStyle} disabled={!wsConnected}>
             Start Video Call
           </button>
           {showRetry && (
@@ -543,7 +517,7 @@ const Video = () => {
             </div>
             <div>
               <p>Stranger</p>
-              <video ref={partnerVideoRef} autoPlay playsInline style={videoStyle} />
+              <video ref={partnerVideoRef} autoPlay playsInline style={videoStyle} placeholder="Waiting for Stranger Video" />
             </div>
           </div>
           <div style={{ marginTop: "20px", maxWidth: "600px" }}>
