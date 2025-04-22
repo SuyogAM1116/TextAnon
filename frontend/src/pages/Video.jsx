@@ -39,7 +39,7 @@ const Video = () => {
       return;
     }
 
-    socketRef.current = new WebSocket("wss://textanon.onrender.com"); // Unified URL
+    socketRef.current = new WebSocket("wss://textanon.onrender.com");
     console.log(`${new Date().toLocaleTimeString()} - WebSocket connecting to wss://textanon.onrender.com`);
 
     socketRef.current.onopen = () => {
@@ -72,7 +72,7 @@ const Video = () => {
           console.log(`${new Date().toLocaleTimeString()} - Received userID:`, parsedMessage.userID);
         } else if (parsedMessage.type === "hey") {
           console.log(`${new Date().toLocaleTimeString()} - Incoming call from:`, parsedMessage.callerID, "signal:", parsedMessage.signal);
-          if (!receivingCall) { // Prevent duplicate handling
+          if (!receivingCall) {
             setReceivingCall(true);
             setCallerSignal(parsedMessage.signal);
           }
@@ -218,9 +218,6 @@ const Video = () => {
       config: {
         iceServers: [
           { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-          { urls: "stun:stun2.l.google.com:19302" },
-          { urls: "stun:stun3.l.google.com:19302" },
           {
             urls: "turn:openrelay.metered.ca:80",
             username: "openrelayproject",
@@ -328,9 +325,6 @@ const Video = () => {
           config: {
             iceServers: [
               { urls: "stun:stun.l.google.com:19302" },
-              { urls: "stun:stun1.l.google.com:19302" },
-              { urls: "stun:stun2.l.google.com:19302" },
-              { urls: "stun:stun3.l.google.com:19302" },
               {
                 urls: "turn:openrelay.metered.ca:80",
                 username: "openrelayproject",
@@ -350,9 +344,10 @@ const Video = () => {
           const signalKey = JSON.stringify(signal);
           if (signalSentRef.current.has(signalKey)) return;
           signalSentRef.current.add(signalKey);
-          console.log(`${new Date().toLocaleTimeString()} - Answerer signaling:`, signal);
+          console.log(`${new Date().toLocaleTimeString()} - Answerer signaling SDP answer:`, signal);
           if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
             socketRef.current.send(JSON.stringify({ type: "acceptCall", signal }));
+            console.log(`${new Date().toLocaleTimeString()} - Sent acceptCall message with SDP answer`);
           } else {
             console.error(`${new Date().toLocaleTimeString()} - Cannot send answer signal: WebSocket not open`);
             setMediaStatus("Failed to send call answer: Signaling server disconnected.");
@@ -413,6 +408,7 @@ const Video = () => {
           cleanup();
         });
 
+        console.log(`${new Date().toLocaleTimeString()} - Signaling caller offer to peer`);
         peer.signal(callerSignal);
         setCallAccepted(true);
         setCallStarted(true);
