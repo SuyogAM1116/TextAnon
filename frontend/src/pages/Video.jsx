@@ -16,6 +16,9 @@ const Video = () => {
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [mediaStatus, setMediaStatus] = useState("Waiting to start media");
   const [wsConnected, setWsConnected] = useState(false);
+  const [showRetry, setShowRetry] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]); // New: Store chat messages
+  const [encryptionKey, setEncryptionKey] = useState(null); // New: Store partner's encryption key
 
   const socketRef = useRef(null);
   const userVideoRef = useRef(null);
@@ -23,14 +26,14 @@ const Video = () => {
   const peerRef = useRef(null);
   const streamRef = useRef(null);
   const reconnectAttempts = useRef(0);
-  const maxReconnectAttempts = 5;
-  const reconnectInterval = 3000; // 3 seconds
+  const maxReconnectAttempts = 10;
+  const baseReconnectInterval = 3000;
 
-  // Initialize and manage WebSocket connection
   const connectWebSocket = () => {
     if (reconnectAttempts.current >= maxReconnectAttempts) {
       console.error(`${new Date().toLocaleTimeString()} - Max WebSocket reconnection attempts reached`);
-      setMediaStatus("Failed to connect to signaling server. Please refresh.");
+      setMediaStatus("Failed to connect to signaling server. Please retry or refresh.");
+      setShowRetry(true);
       return;
     }
 
@@ -41,12 +44,13 @@ const Video = () => {
       console.log(`${new Date().toLocaleTimeString()} - WebSocket connected`);
       setWsConnected(true);
       setMediaStatus("Connected to signaling server");
+      setShowRetry(false);
       reconnectAttempts.current = 0;
     };
 
     socketRef.current.onerror = (error) => {
       console.error(`${new Date().toLocaleTimeString()} - WebSocket error:`, error);
-      setMediaStatus(`Signaling server error: ${error.message || "Unknown error"}`);
+      setMediaStatus(`Signaling server error: ${error.message || "Unable to connect"}`);
       setWsConnected(false);
     };
 
@@ -55,7 +59,8 @@ const Video = () => {
       setWsConnected(false);
       setMediaStatus(`Disconnected from signaling server: ${event.reason || "Connection closed"}`);
       reconnectAttempts.current += 1;
-      setTimeout(connectWebSocket, reconnectInterval);
+      const delay = baseReconnectInterval * Math.pow(2, reconnectAttempts.current);
+      setTimeout(connectWebSocket, delay);
     };
 
     socketRef.current.onmessage = (event) => {
@@ -85,6 +90,21 @@ const Video = () => {
         } else if (parsedMessage.type === "partnerConnected") {
           console.log(`${new Date().toLocaleTimeString()} - Partner connected:`, parsedMessage.partnerID);
           setMediaStatus("Connected to a partner");
+        } else if (parsedMessage.type === "chat") {
+          console.log(`${new Date().toLocaleTimeString()} - Received chat from ${parsedMessage.senderName}:`, parsedMessage.text);
+          setChatMessages((prev) => [
+            ...prev,
+            { sender: parsedMessage.senderName, text: parsedMessage.text },
+          ]);
+        } else if (parsedMessage.type === "encryptionKey") {
+          console.log(`${new Date().toLocaleTimeString()} - Received encryption key (start):`, parsedMessage.key.substring(0, 8) + "...");
+          setEncryptionKey(parsedMessage.key);
+        } else if (parsedMessage.type === "chatEnded") {
+          console.log(`${new Date().toLocaleTimeString()} - Chat ended`);
+          setChatMessages([]);
+          setEncryptionKey(null);
+          setPeerConnected(false);
+          setMediaStatus("Partner disconnected. Waiting for new match...");
         }
       } catch (error) {
         console.error(`${new Date().toLocaleTimeString()} - WebSocket message error:`, error);
@@ -92,7 +112,13 @@ const Video = () => {
     };
   };
 
-  // Initialize WebSocket on component mount
+  const handleRetry = () => {
+    console.log(`${new Date().toLocaleTimeString()} - Manual retry initiated`);
+    reconnectAttempts.current = 0;
+    setShowRetry(false);
+    connectWebSocket();
+  };
+
   useEffect(() => {
     console.log(`${new Date().toLocaleTimeString()} - useEffect: Component mounted`);
     connectWebSocket();
@@ -103,7 +129,6 @@ const Video = () => {
     };
   }, []);
 
-  // Cleanup function for streams, peer, and socket
   const cleanup = () => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
@@ -123,7 +148,6 @@ const Video = () => {
     resetCallState();
   };
 
-  // Reset call-related state
   const resetCallState = () => {
     setCallStarted(false);
     setReceivingCall(false);
@@ -131,9 +155,10 @@ const Video = () => {
     setCallAccepted(false);
     setPeerConnected(false);
     setMediaStatus("Ready to start call");
+    setChatMessages([]);
+    setEncryptionKey(null);
   };
 
-  // Handle username confirmation and send register message
   const handleNameConfirm = () => {
     if (username.trim() !== "") {
       setNameConfirmed(true);
@@ -152,7 +177,6 @@ const Video = () => {
     }
   };
 
-  // Start video call and get media stream
   const startVideoCall = async () => {
     if (!wsConnected) {
       setMediaStatus("Cannot start call: Signaling server not connected.");
@@ -180,7 +204,6 @@ const Video = () => {
     }
   };
 
-  // Initialize peer connection for caller
   const initiatePeerConnection = (currentStream) => {
     const peer = new Peer({
       initiator: true,
@@ -190,12 +213,6 @@ const Video = () => {
         iceServers: [
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun1.l.google.com:19302" },
-          // Add TURN server if needed (example):
-          // {
-          //   urls: "turn:your-turn-server.com",
-          //   username: "username",
-          //   credential: "password",
-          // },
         ],
       },
     });
@@ -261,7 +278,6 @@ const Video = () => {
     });
   };
 
-  // Handle incoming call (answerer)
   useEffect(() => {
     if (receivingCall && !callAccepted && callerSignal) {
       if (!wsConnected) {
@@ -289,7 +305,6 @@ const Video = () => {
               iceServers: [
                 { urls: "stun:stun.l.google.com:19302" },
                 { urls: "stun:stun1.l.google.com:19302" },
-                // Add TURN server if needed
               ],
             },
           });
@@ -366,13 +381,11 @@ const Video = () => {
     }
   }, [receivingCall, callerSignal, wsConnected]);
 
-  // End call and cleanup
   const endCall = () => {
     console.log(`${new Date().toLocaleTimeString()} - endCall: Ending call`);
     cleanup();
   };
 
-  // Skip to next call
   const handleSkip = () => {
     console.log(`${new Date().toLocaleTimeString()} - handleSkip: Skipping to next call`);
     cleanup();
@@ -384,12 +397,10 @@ const Video = () => {
     }, 1000);
   };
 
-  // Send emoji (placeholder)
   const sendEmoji = (emoji) => {
     alert(`Sent emoji: ${emoji}`);
   };
 
-  // Toggle audio mute
   const toggleMute = () => {
     if (streamRef.current && streamRef.current.getAudioTracks()) {
       streamRef.current.getAudioTracks().forEach((track) => (track.enabled = !muted));
@@ -398,12 +409,20 @@ const Video = () => {
     }
   };
 
-  // Toggle video
   const toggleVideo = () => {
     if (streamRef.current && streamRef.current.getVideoTracks()) {
       streamRef.current.getVideoTracks().forEach((track) => (track.enabled = !videoEnabled));
       setVideoEnabled(!videoEnabled);
       console.log(`${new Date().toLocaleTimeString()} - toggleVideo: Video ${!videoEnabled ? "disabled" : "enabled"}`);
+    }
+  };
+
+  // New: Send chat message
+  const sendChatMessage = (text) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: "chat", text }));
+      setChatMessages((prev) => [...prev, { sender: username, text }]);
+      console.log(`${new Date().toLocaleTimeString()} - Sent chat message:`, text);
     }
   };
 
@@ -451,6 +470,11 @@ const Video = () => {
           <button onClick={startVideoCall} style={startButtonStyle} disabled={!wsConnected}>
             Start Video Call
           </button>
+          {showRetry && (
+            <button onClick={handleRetry} style={startButtonStyle} disabled={wsConnected}>
+              Retry Connection
+            </button>
+          )}
         </div>
       ) : (
         <div style={{ textAlign: "center" }}>
@@ -466,7 +490,28 @@ const Video = () => {
               <video ref={partnerVideoRef} autoPlay playsInline style={videoStyle} placeholder="Waiting for Stranger Video" />
             </div>
           </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: "15px" }}>
+          <div style={{ marginTop: "20px", maxWidth: "600px" }}>
+            <h3>Chat</h3>
+            <div style={{ maxHeight: "200px", overflowY: "auto", border: "1px solid #ccc", padding: "10px" }}>
+              {chatMessages.map((msg, index) => (
+                <p key={index}>
+                  <strong>{msg.sender}:</strong> {msg.text}
+                </p>
+              ))}
+            </div>
+            <input
+              type="text"
+              placeholder="Type a message..."
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && e.target.value.trim()) {
+                  sendChatMessage(e.target.value);
+                  e.target.value = "";
+                }
+              }}
+              style={inputStyle(theme)}
+            />
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: "15px", marginTop: "20px" }}>
             <button onClick={toggleMute} style={emojiButtonStyle}>
               <span className="material-icons">{muted ? "mic_off" : "mic"}</span>
             </button>
@@ -500,7 +545,6 @@ const Video = () => {
   );
 };
 
-// Styles (unchanged)
 const videoStyle = {
   width: "600px",
   height: "400px",
@@ -563,7 +607,7 @@ const inputStyle = (theme) => ({
   borderRadius: "5px",
   border: "1px solid #ccc",
   fontSize: "16px",
-  textAlign: "center",
+  textAlign: "left",
   outline: "none",
   backgroundColor: theme === "dark" ? "#333" : "#fff",
   color: theme === "dark" ? "#ffffff" : "#222",

@@ -9,250 +9,304 @@ const app = express();
 const httpServer = http.createServer(app);
 const server = new WebSocket.Server({ server: httpServer });
 
-console.log(`🚀 WebSocket Server started on ws://localhost:${PORT}`);
+const clients = new Map(); // Map of userID to { socket, username, encryptionKey }
+const waitingQueue = new Set(); // Set of userIDs
+const pairs = new Map(); // Map of userID to partner userID
 
-let waitingQueue = [];
-const pairs = new Map();
-const clients = new Map();
-const usernames = new Map();
-const encryptionKeys = new Map();
+// Log memory usage periodically
+setInterval(() => {
+  const memoryUsage = process.memoryUsage();
+  console.log(
+    `🧠 Memory Usage: RSS=${(memoryUsage.rss / 1024 / 1024).toFixed(2)}MB, ` +
+    `HeapTotal=${(memoryUsage.heapTotal / 1024 / 1024).toFixed(2)}MB, ` +
+    `HeapUsed=${(memoryUsage.heapUsed / 1024 / 1024).toFixed(2)}MB`
+  );
+}, 30000); // Log every 30 seconds
+
+console.log(`🚀 WebSocket Server started on ws://0.0.0.0:${PORT}`);
 
 function logState(event) {
-    console.log(`--- Server State Log - ${event} ---`);
-    console.log(`Waiting Queue Length: ${waitingQueue.length}`);
-    console.log("Waiting Queue:", waitingQueue.map(socket => clients.get(socket) || "Unknown").join(", "));
-    console.log("Pairs:", Array.from(pairs.entries()).map(([socket1, socket2]) => `(${clients.get(socket1) || "Unknown"} <-> ${clients.get(socket2) || "Unknown"})`).join(", "));
-    console.log("Clients:", Array.from(clients.entries()).map(([socket, userID]) => `${userID}`).join(", "));
-    console.log("Usernames:", Array.from(usernames.entries()).map(([userID, username]) => `${userID}: ${username}`).join(", "));
-    console.log("Encryption Keys (First 8 chars):", Array.from(encryptionKeys.entries()).map(([userID, key]) => `${userID}: ${key ? key.substring(0, 8) + "..." : "No Key"}`).join(", "));
-    console.log("--- End State Log ---");
+  console.log(`--- Server State Log - ${event} ---`);
+  console.log(`Waiting Queue Length: ${waitingQueue.size}`);
+  console.log(`Waiting Queue: ${Array.from(waitingQueue).join(", ")}`);
+  console.log(
+    `Pairs: ${Array.from(pairs.entries())
+      .map(([userID1, userID2]) => `(${clients.get(userID1)?.username || userID1} <-> ${clients.get(userID2)?.username || userID2})`)
+      .join(", ")}`
+  );
+  console.log(`Clients: ${Array.from(clients.keys()).join(", ")}`);
+  console.log(
+    `Usernames: ${Array.from(clients.entries())
+      .map(([userID, { username }]) => `${userID}: ${username}`)
+      .join(", ")}`
+  );
+  console.log(
+    `Encryption Keys (First 8 chars): ${Array.from(clients.entries())
+      .map(([userID, { encryptionKey }]) => `${userID}: ${encryptionKey ? encryptionKey.substring(0, 8) + "..." : "No Key"}`)
+      .join(", ")}`
+  );
+  console.log(`--- End State Log ---`);
+}
+
+function pairUsers() {
+  logState("pairUsers - Entry");
+  if (waitingQueue.size < 2) {
+    console.log(`⏳ pairUsers: Not enough users in queue (${waitingQueue.size})`);
+    return;
+  }
+
+  const [userID1, userID2] = Array.from(waitingQueue).slice(0, 2);
+  const client1 = clients.get(userID1);
+  const client2 = clients.get(userID2);
+
+  if (
+    !client1?.socket ||
+    !client2?.socket ||
+    client1.socket.readyState !== WebSocket.OPEN ||
+    client2.socket.readyState !== WebSocket.OPEN ||
+    client1.socket === client2.socket
+  ) {
+    console.warn(`⚠️ pairUsers: Skipped pairing due to invalid or closed socket(s) for ${userID1} or ${userID2}`);
+    waitingQueue.delete(userID1);
+    waitingQueue.delete(userID2);
+    return;
+  }
+
+  if (pairs.has(userID1) || pairs.has(userID2)) {
+    console.warn(`⚠️ pairUsers: Skipped pairing for ${userID1} and ${userID2} as one or both are already paired`);
+    waitingQueue.delete(userID1);
+    waitingQueue.delete(userID2);
+    return;
+  }
+
+  waitingQueue.delete(userID1);
+  waitingQueue.delete(userID2);
+  pairs.set(userID1, userID2);
+  pairs.set(userID2, userID1);
+
+  console.log(`👥 Paired users: ${client1.username} and ${client2.username}`);
+  client1.socket.send(
+    JSON.stringify({
+      type: "systemMessage",
+      sender: "System",
+      text: "You are now connected to a partner! Messages are end-to-end encrypted.",
+    })
+  );
+  client2.socket.send(
+    JSON.stringify({
+      type: "systemMessage",
+      sender: "System",
+      text: "You are now connected to a partner! Messages are end-to-end encrypted.",
+    })
+  );
+
+  client1.socket.send(JSON.stringify({ type: "partnerConnected", partnerID: userID2 }));
+  client2.socket.send(JSON.stringify({ type: "partnerConnected", partnerID: userID1 }));
+
+  // Send encryption key from user1 to user2
+  const key1 = client1.encryptionKey;
+  if (key1) {
+    client2.socket.send(JSON.stringify({ type: "encryptionKey", key: key1 }));
+    console.log(
+      `🔑 User ${userID2} received encryption key from User ${userID1} (start): ${key1.substring(0, 8)}...`
+    );
+  }
+
+  logState("pairUsers - Exit");
+}
+
+function removeFromQueue(userID) {
+  waitingQueue.delete(userID);
+}
+
+function handleDisconnection(userID) {
+  logState("handleDisconnection - Entry");
+  const client = clients.get(userID);
+  if (!client) return;
+
+  const partnerID = pairs.get(userID);
+  if (partnerID) {
+    const partner = clients.get(partnerID);
+    if (partner?.socket?.readyState === WebSocket.OPEN) {
+      console.log(`📢 Notifying partner User ${partnerID} about disconnection of User ${userID}`);
+      partner.socket.send(
+        JSON.stringify({
+          type: "systemMessage",
+          sender: "System",
+          text: "Your partner has left. Finding a new match...",
+        })
+      );
+      partner.socket.send(JSON.stringify({ type: "chatEnded" }));
+      waitingQueue.add(partnerID);
+    }
+    pairs.delete(userID);
+    pairs.delete(partnerID);
+  }
+
+  removeFromQueue(userID);
+  clients.delete(userID);
+
+  pairUsers();
+  logState("handleDisconnection - Exit");
+}
+
+function handleSkip(userID) {
+  logState("handleSkip - Entry");
+  const client = clients.get(userID);
+  if (!client) return;
+
+  const partnerID = pairs.get(userID);
+  if (partnerID) {
+    const partner = clients.get(partnerID);
+    if (partner?.socket?.readyState === WebSocket.OPEN) {
+      console.log(`📢 Notifying partner User ${partnerID} about skip by User ${userID}`);
+      partner.socket.send(
+        JSON.stringify({
+          type: "systemMessage",
+          sender: "System",
+          text: "Your partner has skipped. Finding a new match...",
+        })
+      );
+      partner.socket.send(JSON.stringify({ type: "chatEnded" }));
+      waitingQueue.add(partnerID);
+    }
+    pairs.delete(userID);
+    pairs.delete(partnerID);
+  }
+
+  if (client.socket.readyState === WebSocket.OPEN) {
+    waitingQueue.add(userID);
+  }
+  pairUsers();
+  logState("handleSkip - Exit");
+}
+
+function getPartnerSocket(userID) {
+  const partnerID = pairs.get(userID);
+  return partnerID ? clients.get(partnerID)?.socket : null;
 }
 
 server.on("connection", (socket) => {
-    const userID = Date.now().toString();
-    clients.set(socket, userID);
-    usernames.set(userID, `User ${userID}`);
+  const userID = Date.now().toString();
+  clients.set(userID, { socket, username: `User ${userID}`, encryptionKey: null });
+  console.log(`✅ User ${userID} connected - ID: ${userID}`);
+  socket.send(JSON.stringify({ type: "userID", userID }));
+  logState("Connection");
 
-    console.log(`✅ User ${userID} connected - ID: ${userID}`);
-    socket.send(JSON.stringify({ type: "userID", userID }));
+  socket.on("message", (message) => {
+    try {
+      const parsedMessage = JSON.parse(message.toString());
+      const senderUserID = userID;
+      const partnerSocket = getPartnerSocket(userID);
+      const partnerUserID = partnerSocket ? clients.get(pairs.get(userID))?.username : null;
 
-    logState("Connection");
-
-    socket.on("message", (message) => {
-        try {
-            const parsedMessage = JSON.parse(message);
-            const senderUserID = clients.get(socket);
-            const partnerSocket = getPartnerSocket(socket);
-            const partnerUserID = partnerSocket ? clients.get(partnerSocket) : null;
-
-            if (parsedMessage.type === "register") {
-                usernames.set(userID, parsedMessage.name || `User ${userID}`);
-                encryptionKeys.set(userID, parsedMessage.encryptionKey || "default-key");
-                console.log(`👤 User ${userID} registered name: ${parsedMessage.name} and encryption key (start): ${parsedMessage.encryptionKey ? parsedMessage.encryptionKey.substring(0, 8) + "..." : "No Key"}`);
-                if (socket.readyState === WebSocket.OPEN && !pairs.has(socket)) {
-                    console.log(`📥 Adding User ${userID} to waiting queue`);
-                    waitingQueue.push(socket);
-                    pairUsers();
-                }
-            } else if (parsedMessage.type === "chat") {
-                if (partnerSocket && partnerSocket.readyState === WebSocket.OPEN && pairs.get(partnerSocket) === socket) {
-                    console.log(`✉️ Encrypted message from User ${senderUserID} to Partner ${partnerUserID}`);
-                    partnerSocket.send(
-                        JSON.stringify({
-                            senderID: userID,
-                            senderName: usernames.get(userID),
-                            text: parsedMessage.text,
-                            type: "chat",
-                        })
-                    );
-                } else {
-                    console.warn(`⚠️ Partner for User ${senderUserID} not found, not open, or not paired correctly.`);
-                }
-            } else if (parsedMessage.type === "skip") {
-                handleSkip(socket);
-            } else if (parsedMessage.type === "callUser") {
-                if (partnerSocket && partnerSocket.readyState === WebSocket.OPEN) {
-                    console.log(`📞 User ${senderUserID} is initiating a video call to Partner ${partnerUserID}`);
-                    partnerSocket.send(JSON.stringify({
-                        type: "hey",
-                        signal: parsedMessage.signal,
-                        callerID: userID
-                    }));
-                } else {
-                    console.warn(`⚠️ No valid partner for User ${senderUserID} to initiate video call`);
-                    socket.send(JSON.stringify({
-                        type: "systemMessage",
-                        sender: "System",
-                        text: "No partner available to start the video call."
-                    }));
-                }
-            } else if (parsedMessage.type === "acceptCall") {
-                if (partnerSocket && partnerSocket.readyState === WebSocket.OPEN) {
-                    console.log(`✅ User ${senderUserID} accepted video call from Partner ${partnerUserID}`);
-                    partnerSocket.send(JSON.stringify({
-                        type: "callAccepted",
-                        signal: parsedMessage.signal
-                    }));
-                } else {
-                    console.warn(`⚠️ No valid partner for User ${senderUserID} to accept video call`);
-                    socket.send(JSON.stringify({
-                        type: "systemMessage",
-                        sender: "System",
-                        text: "No partner available to accept the video call."
-                    }));
-                }
-            } else if (parsedMessage.type === "ice-candidate") {
-                if (partnerSocket && partnerSocket.readyState === WebSocket.OPEN) {
-                    console.log(`🧊 User ${senderUserID} sending ICE candidate to Partner ${partnerUserID}`);
-                    partnerSocket.send(JSON.stringify({
-                        type: "ice-candidate",
-                        candidate: parsedMessage.candidate
-                    }));
-                } else {
-                    console.warn(`⚠️ No valid partner for User ${senderUserID} to send ICE candidate`);
-                }
-            }
-        } catch (error) {
-            console.error(`❌ Error processing message from User ${clients.get(socket)}:`, error);
-            socket.send(JSON.stringify({
-                type: "systemMessage",
-                sender: "System",
-                text: "An error occurred. Please try again."
-            }));
+      if (parsedMessage.type === "register") {
+        clients.set(userID, {
+          socket,
+          username: parsedMessage.name || `User ${userID}`,
+          encryptionKey: parsedMessage.encryptionKey || "default-key",
+        });
+        console.log(
+          `👤 User ${userID} registered name: ${parsedMessage.name} and encryption key (start): ${
+            parsedMessage.encryptionKey ? parsedMessage.encryptionKey.substring(0, 8) + "..." : "No Key"
+          }`
+        );
+        if (socket.readyState === WebSocket.OPEN && !pairs.has(userID)) {
+          console.log(`📥 Adding User ${userID} to waiting queue`);
+          waitingQueue.add(userID);
+          pairUsers();
         }
-    });
+      } else if (parsedMessage.type === "chat") {
+        if (partnerSocket?.readyState === WebSocket.OPEN && pairs.get(pairs.get(userID)) === userID) {
+          console.log(`✉️ Encrypted message from User ${senderUserID} to Partner ${partnerUserID}`);
+          partnerSocket.send(
+            JSON.stringify({
+              senderID: userID,
+              senderName: clients.get(userID).username,
+              text: parsedMessage.text,
+              type: "chat",
+            })
+          );
+        } else {
+          console.warn(`⚠️ Partner for User ${senderUserID} not found, not open, or not paired correctly`);
+        }
+      } else if (parsedMessage.type === "skip") {
+        handleSkip(userID);
+      } else if (parsedMessage.type === "callUser") {
+        if (partnerSocket?.readyState === WebSocket.OPEN) {
+          console.log(`📞 User ${senderUserID} is initiating a video call to Partner ${partnerUserID}`);
+          partnerSocket.send(
+            JSON.stringify({
+              type: "hey",
+              signal: parsedMessage.signal,
+              callerID: userID,
+            })
+          );
+        } else {
+          console.warn(`⚠️ No valid partner for User ${senderUserID} to initiate video call`);
+          socket.send(
+            JSON.stringify({
+              type: "systemMessage",
+              sender: "System",
+              text: "No partner available to start the video call.",
+            })
+          );
+        }
+      } else if (parsedMessage.type === "acceptCall") {
+        if (partnerSocket?.readyState === WebSocket.OPEN) {
+          console.log(`✅ User ${senderUserID} accepted video call from Partner ${partnerUserID}`);
+          partnerSocket.send(
+            JSON.stringify({
+              type: "callAccepted",
+              signal: parsedMessage.signal,
+            })
+          );
+        } else {
+          console.warn(`⚠️ No valid partner for User ${senderUserID} to accept video call`);
+          socket.send(
+            JSON.stringify({
+              type: "systemMessage",
+              sender: "System",
+              text: "No partner available to accept the video call.",
+            })
+          );
+        }
+      } else if (parsedMessage.type === "ice-candidate") {
+        if (partnerSocket?.readyState === WebSocket.OPEN) {
+          console.log(`🧊 User ${senderUserID} sending ICE candidate to Partner ${partnerUserID}`);
+          partnerSocket.send(
+            JSON.stringify({
+              type: "ice-candidate",
+              candidate: parsedMessage.candidate,
+            })
+          );
+        } else {
+          console.warn(`⚠️ No valid partner for User ${senderUserID} to send ICE candidate`);
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error processing message from User ${userID}:`, error);
+      socket.send(
+        JSON.stringify({
+          type: "systemMessage",
+          sender: "System",
+          text: "An error occurred. Please try again.",
+        })
+      );
+    }
+  });
 
-    socket.on("close", () => {
-        const userID = clients.get(socket);
-        console.log(`❌ User ${userID} disconnected`);
-        clients.delete(socket);
-        usernames.delete(userID);
-        encryptionKeys.delete(userID);
-        removeFromQueue(socket);
-        handleDisconnection(socket);
-        logState("Disconnection");
-    });
+  socket.on("close", () => {
+    console.log(`❌ User ${userID} disconnected`);
+    handleDisconnection(userID);
+  });
 
-    socket.on("error", (error) => {
-        console.error(`⚠️ WebSocket Error for User ${clients.get(socket)}:`, error.message);
-    });
+  socket.on("error", (error) => {
+    console.error(`⚠️ WebSocket Error for User ${userID}:`, error.message);
+    handleDisconnection(userID);
+  });
 });
 
-function pairUsers() {
-    logState("pairUsers - Entry");
-    while (waitingQueue.length >= 2) {
-        const socket1 = waitingQueue.shift();
-        const socket2 = waitingQueue.shift();
-
-        if (!socket1 || !socket2 || socket1 === socket2) {
-            console.warn("⚠️ pairUsers: Skipped pairing due to null or identical socket(s).");
-            if (socket1 && socket1.readyState === WebSocket.OPEN) waitingQueue.push(socket1);
-            if (socket2 && socket2.readyState === WebSocket.OPEN) waitingQueue.push(socket2);
-            continue;
-        }
-
-        if (pairs.has(socket1) || pairs.has(socket2)) {
-            console.warn(`⚠️ pairUsers: Skipped pairing for ${clients.get(socket1)} and ${clients.get(socket2)} as one or both are already paired.`);
-            if (socket1.readyState === WebSocket.OPEN && !pairs.has(socket1)) waitingQueue.push(socket1);
-            if (socket2.readyState === WebSocket.OPEN && !pairs.has(socket2)) waitingQueue.push(socket2);
-            continue;
-        }
-
-        if (socket1.readyState !== WebSocket.OPEN || socket2.readyState !== WebSocket.OPEN) {
-            console.warn(`⚠️ pairUsers: Skipped pairing ${clients.get(socket1)} and ${clients.get(socket2)} because one or both sockets are not OPEN.`);
-            if (socket1.readyState === WebSocket.OPEN) waitingQueue.push(socket1);
-            if (socket2.readyState === WebSocket.OPEN) waitingQueue.push(socket2);
-            continue;
-        }
-
-        pairs.set(socket1, socket2);
-        pairs.set(socket2, socket1);
-
-        const userID1 = clients.get(socket1);
-        const userID2 = clients.get(socket2);
-
-        const key1 = encryptionKeys.get(userID1);
-        socket2.send(JSON.stringify({ type: "encryptionKey", key: key1 }));
-
-        console.log(`👥 Paired users: User ${userID1} and User ${userID2}. User ${userID2} received encryption key from User ${userID1} (start): ${key1 ? key1.substring(0, 8) + "..." : "No Key"}`);
-
-        const message = JSON.stringify({
-            type: "systemMessage",
-            sender: "System",
-            text: "You are now connected to a partner! Messages are end-to-end encrypted."
-        });
-        socket1.send(message);
-        socket2.send(message);
-
-        socket1.send(JSON.stringify({ type: "partnerConnected", partnerID: clients.get(socket2) }));
-        socket2.send(JSON.stringify({ type: "partnerConnected", partnerID: clients.get(socket1) }));
-    }
-    logState("pairUsers - Exit");
-}
-
-function removeFromQueue(socketToRemove) {
-    waitingQueue = waitingQueue.filter(socket => socket !== socketToRemove);
-}
-
-function handleDisconnection(disconnectedSocket) {
-    logState("handleDisconnection - Entry");
-    const disconnectedUserID = clients.get(disconnectedSocket);
-    const partnerSocket = pairs.get(disconnectedSocket);
-
-    pairs.delete(disconnectedSocket);
-    if (partnerSocket) {
-        pairs.delete(partnerSocket);
-    }
-
-    if (partnerSocket && partnerSocket.readyState === WebSocket.OPEN) {
-        const partnerUserID = clients.get(partnerSocket);
-        console.log(`📢 Notifying partner User ${partnerUserID} about disconnection of User ${disconnectedUserID}`);
-        partnerSocket.send(JSON.stringify({
-            type: "systemMessage",
-            sender: "System",
-            text: "Your partner has left. Finding a new match..."
-        }));
-        partnerSocket.send(JSON.stringify({ type: "chatEnded" }));
-        waitingQueue.push(partnerSocket);
-        pairUsers();
-    }
-
-    removeFromQueue(disconnectedSocket);
-    logState("handleDisconnection - Exit");
-}
-
-function handleSkip(socket) {
-    logState("handleSkip - Entry");
-    const userID = clients.get(socket);
-    const partnerSocket = pairs.get(socket);
-
-    pairs.delete(socket);
-    if (partnerSocket) {
-        pairs.delete(partnerSocket);
-        if (partnerSocket.readyState === WebSocket.OPEN) {
-            const partnerUserID = clients.get(partnerSocket);
-            console.log(`📢 Notifying partner User ${partnerUserID} about skip by User ${userID}`);
-            partnerSocket.send(JSON.stringify({
-                type: "systemMessage",
-                sender: "System",
-                text: "Your partner has skipped. Finding a new match..."
-            }));
-            partnerSocket.send(JSON.stringify({ type: "chatEnded" }));
-            waitingQueue.push(partnerSocket);
-        }
-    }
-
-    if (socket.readyState === WebSocket.OPEN) {
-        waitingQueue.push(socket);
-    }
-    pairUsers();
-    logState("handleSkip - Exit");
-}
-
-function getPartnerSocket(socket) {
-    return pairs.get(socket) || null;
-}
-
 httpServer.listen(PORT, () => {
-    console.log(`Server started on port ${PORT}`);
+  console.log(`Server started on port ${PORT}`);
 });
