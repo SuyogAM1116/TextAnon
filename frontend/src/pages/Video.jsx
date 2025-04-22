@@ -29,7 +29,7 @@ const Video = () => {
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 10;
   const baseReconnectInterval = 3000;
-  const signalSentRef = useRef(new Set()); // Track sent signals
+  const signalSentRef = useRef(new Set());
 
   const connectWebSocket = () => {
     if (reconnectAttempts.current >= maxReconnectAttempts) {
@@ -257,7 +257,8 @@ const Video = () => {
     peer.on("stream", (remoteStream) => {
       console.log(`${new Date().toLocaleTimeString()} - Initiator received remote stream with tracks:`, remoteStream.getTracks());
       if (remoteStream.getVideoTracks().length === 0) {
-        console.error(`${new Date().toLocaleTimeString()} - No video tracks in remote stream`);
+        console.error(`${new Date().toLocaleTimeString()} - No video tracks in remote stream. Check TURN server or network.`);
+        setMediaStatus("No video from partner. Network or TURN issue?");
       }
       if (partnerVideoRef.current) {
         partnerVideoRef.current.srcObject = remoteStream;
@@ -265,7 +266,6 @@ const Video = () => {
         console.log(`${new Date().toLocaleTimeString()} - Remote stream set to partnerVideoRef`);
       }
       setPeerConnected(true);
-      setMediaStatus("Connected to peer");
     });
 
     peer.on("connect", () => {
@@ -276,10 +276,14 @@ const Video = () => {
       console.log(`${new Date().toLocaleTimeString()} - ICE connection state:`, peer.iceConnectionState);
       setIceConnectionState(peer.iceConnectionState);
       if (peer.iceConnectionState === "failed" || peer.iceConnectionState === "disconnected") {
-        console.error(`${new Date().toLocaleTimeString()} - ICE connection failed`);
-        setMediaStatus("WebRTC connection failed. Retrying...");
+        console.error(`${new Date().toLocaleTimeString()} - ICE connection failed, attempting reconnection`);
+        setMediaStatus("WebRTC connection failed. Attempting to reconnect...");
         cleanup();
-        setTimeout(startVideoCall, 2000);
+        setTimeout(() => {
+          if (streamRef.current) initiatePeerConnection(streamRef.current);
+        }, 2000);
+      } else if (peer.iceConnectionState === "connected") {
+        setMediaStatus("Connected to peer");
       }
     });
 
@@ -357,7 +361,8 @@ const Video = () => {
         peer.on("stream", (remoteStream) => {
           console.log(`${new Date().toLocaleTimeString()} - Answerer received remote stream with tracks:`, remoteStream.getTracks());
           if (remoteStream.getVideoTracks().length === 0) {
-            console.error(`${new Date().toLocaleTimeString()} - No video tracks in remote stream`);
+            console.error(`${new Date().toLocaleTimeString()} - No video tracks in remote stream. Check TURN server or network.`);
+            setMediaStatus("No video from partner. Network or TURN issue?");
           }
           if (partnerVideoRef.current) {
             partnerVideoRef.current.srcObject = remoteStream;
@@ -365,7 +370,6 @@ const Video = () => {
             console.log(`${new Date().toLocaleTimeString()} - Remote stream set to partnerVideoRef`);
           }
           setPeerConnected(true);
-          setMediaStatus("Connected to peer");
         });
 
         peer.on("connect", () => {
@@ -376,10 +380,14 @@ const Video = () => {
           console.log(`${new Date().toLocaleTimeString()} - ICE connection state:`, peer.iceConnectionState);
           setIceConnectionState(peer.iceConnectionState);
           if (peer.iceConnectionState === "failed" || peer.iceConnectionState === "disconnected") {
-            console.error(`${new Date().toLocaleTimeString()} - ICE connection failed`);
-            setMediaStatus("WebRTC connection failed. Retrying...");
+            console.error(`${new Date().toLocaleTimeString()} - ICE connection failed, attempting reconnection`);
+            setMediaStatus("WebRTC connection failed. Attempting to reconnect...");
             cleanup();
-            setTimeout(startVideoCall, 2000);
+            setTimeout(() => {
+              if (streamRef.current) initiatePeerConnection(streamRef.current);
+            }, 2000);
+          } else if (peer.iceConnectionState === "connected") {
+            setMediaStatus("Connected to peer");
           }
         });
 
