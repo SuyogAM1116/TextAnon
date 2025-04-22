@@ -33,14 +33,14 @@ const Video = () => {
 
   const connectWebSocket = () => {
     if (reconnectAttempts.current >= maxReconnectAttempts) {
-      console.error(`${new Date().toLocaleTimeString()} - Max WebSocket reconnection attempts reached`);
+      console.log(`${new Date().toLocaleTimeString()} - Max WebSocket reconnection attempts reached`);
       setMediaStatus("Failed to connect to signaling server. Please retry or refresh.");
       setShowRetry(true);
       return;
     }
 
-    socketRef.current = new WebSocket("wss://textanon.onrender.com");
-    console.log(`${new Date().toLocaleTimeString()} - WebSocket connecting to ws://localhost:8080`);
+    socketRef.current = new WebSocket("wss://textanon.onrender.com"); // Unified URL
+    console.log(`${new Date().toLocaleTimeString()} - WebSocket connecting to wss://textanon.onrender.com`);
 
     socketRef.current.onopen = () => {
       console.log(`${new Date().toLocaleTimeString()} - WebSocket connected`);
@@ -72,8 +72,10 @@ const Video = () => {
           console.log(`${new Date().toLocaleTimeString()} - Received userID:`, parsedMessage.userID);
         } else if (parsedMessage.type === "hey") {
           console.log(`${new Date().toLocaleTimeString()} - Incoming call from:`, parsedMessage.callerID, "signal:", parsedMessage.signal);
-          setReceivingCall(true);
-          setCallerSignal(parsedMessage.signal);
+          if (!receivingCall) { // Prevent duplicate handling
+            setReceivingCall(true);
+            setCallerSignal(parsedMessage.signal);
+          }
         } else if (parsedMessage.type === "ice-candidate") {
           if (peerRef.current && parsedMessage.candidate) {
             console.log(`${new Date().toLocaleTimeString()} - Adding ICE candidate:`, parsedMessage.candidate);
