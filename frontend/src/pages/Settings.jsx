@@ -1,13 +1,23 @@
 import React, { useContext, useState } from "react";
+// Import necessary components from react-bootstrap
 import { Button, Form, Row, Col } from "react-bootstrap";
+// Assuming ThemeContext is correctly exported from this path
 import { ThemeContext } from "../components/ThemeContext";
 import { Link } from "react-router-dom";
 import { FaClock, FaFont, FaVideo, FaMicrophoneSlash, FaCamera, FaArrowLeft } from "react-icons/fa";
 
+// This component uses the ThemeContext provided by ThemeProvider
 const Settings = () => {
+  // --- CONTEXT UPDATE ---
+  // Get the necessary states and setters based on the corrected ThemeProvider
+  // We need 'theme' for styling, 'darkModeAllowed' and its setter for the feature toggle,
+  // and 'setTheme' to force light mode when the feature is disabled.
   const {
     theme,
-    setTheme,
+    darkModeAllowed, // The setting we control here (boolean)
+    setDarkModeAllowed, // The setter for the allowance
+    setTheme, // Need this to force light theme when disabling
+    // Other settings remain the same
     selfDestructEnabled,
     setSelfDestructEnabled,
     destructTime,
@@ -15,13 +25,28 @@ const Settings = () => {
     customTime,
     setCustomTime,
   } = useContext(ThemeContext);
+  // --- END CONTEXT UPDATE ---
 
+  // State for custom time validation (remains the same)
   const [customTimeError, setCustomTimeError] = useState("");
 
-  const handleThemeToggle = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
-  };
+  // --- Handler for the Dark Mode Feature Enable/Disable Button ---
+  // This function toggles whether the dark mode feature is permitted
+  const handleDarkModeEnableToggle = () => {
+    const isNowEnabled = !darkModeAllowed; // Calculate the new state
+    setDarkModeAllowed(isNowEnabled); // Update the enable/disable state in context
+    console.log(`[Settings] Toggled darkModeEnabled (feature allowed) to: ${isNowEnabled}`);
 
+    // If the feature is being DISABLED, force the actual theme to light
+    if (!isNowEnabled) {
+      setTheme('light');
+      console.log("[Settings] Dark mode feature disabled, forcing theme to light.");
+    }
+    // If enabling, don't force theme, let the navbar toggle or default handle it
+  };
+  // --- End new handler ---
+
+  // --- Other handlers remain the same ---
   const handleSelfDestructToggle = (e) => {
     setSelfDestructEnabled(e.target.checked);
     console.log(`[Settings] Set selfDestructEnabled=${e.target.checked}`);
@@ -46,8 +71,10 @@ const Settings = () => {
       setCustomTimeError("");
     }
   };
+  // --- End Other Handlers ---
 
   return (
+    // --- Main div structure and styling remain the same ---
     <div
       style={{
         backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa",
@@ -62,26 +89,31 @@ const Settings = () => {
     >
       <h2 className="mb-4">Settings</h2>
 
-      {/* General Section */}
+      {/* General Section - Structure remains the same */}
       <div style={sectionStyle(theme)} className="mb-3">
         <h3 style={headerStyle}>General</h3>
-        <Form.Group as={Row} className="mb-0 align-items-center" controlId="themeToggle">
+        <Form.Group as={Row} className="mb-0 align-items-center" controlId="darkModeEnableToggle"> {/* ID Updated */}
           <Form.Label column sm="8">
-            Theme:
+             {/* --- UPDATED LABEL --- */}
+            Dark Mode Feature: {/* Label reflects what the button controls */}
           </Form.Label>
           <Col sm="4" className="text-end">
+            {/* --- UPDATED BUTTON LOGIC --- */}
             <Button
-              variant={theme === "dark" ? "outline-light" : "outline-dark"}
-              onClick={handleThemeToggle}
+              // Variant reflects if the FEATURE is currently enabled
+              variant={darkModeAllowed ? "outline-danger" : "outline-success"} // Danger to disable feature, Success to enable feature
+              onClick={handleDarkModeEnableToggle} // Calls the correct handler
               size="sm"
             >
-              {theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              {/* Text reflects if the FEATURE is currently enabled */}
+              {darkModeAllowed ? "Disable Feature" : "Enable Feature"}
             </Button>
+            {/* --- End Update --- */}
           </Col>
         </Form.Group>
       </div>
 
-      {/* Message and Chat Section */}
+      {/* Message and Chat Section (Structure remains the same) */}
       <div style={sectionStyle(theme)} className="mb-3">
         <h3 style={headerStyle}>Message & Chat</h3>
         <Form.Group as={Row} className="mb-2 align-items-center" controlId="selfDestructToggle">
@@ -158,38 +190,15 @@ const Settings = () => {
         </Form.Group>
       </div>
 
-      {/* Video Call Section */}
+      {/* Video Call Section (Structure remains the same) */}
       <div style={sectionStyle(theme)} className="mb-3">
-        <h3 style={headerStyle}>Video Call (Example)</h3>
-        <Form.Group as={Row} className="mb-2 align-items-center" controlId="videoQualitySelect">
-          <Form.Label column sm="6">
-            <FaVideo className="me-2" /> Video Quality:
-          </Form.Label>
-          <Col sm="6">
-            <Form.Select style={selectStyle(theme)} size="sm" disabled>
-              <option>Medium</option>
-            </Form.Select>
-          </Col>
-        </Form.Group>
-        <Form.Group as={Row} className="mb-2 align-items-center" controlId="disableCameraCheck">
-          <Form.Label column sm="8">
-            <FaCamera className="me-2" /> Disable Camera on Join:
-          </Form.Label>
-          <Col sm="4" className="text-end">
-            <Form.Check type="switch" disabled />
-          </Col>
-        </Form.Group>
-        <Form.Group as={Row} className="mb-0 align-items-center" controlId="autoMuteCheck">
-          <Form.Label column sm="8">
-            <FaMicrophoneSlash className="me-2" /> Auto-Mute on Join:
-          </Form.Label>
-          <Col sm="4" className="text-end">
-            <Form.Check type="switch" disabled />
-          </Col>
-        </Form.Group>
+         <h3 style={headerStyle}>Video Call (Example)</h3>
+         <Form.Group as={Row} className="mb-2 align-items-center" controlId="videoQualitySelect"><Form.Label column sm="6"><FaVideo className="me-2" /> Video Quality:</Form.Label><Col sm="6"><Form.Select style={selectStyle(theme)} size="sm" disabled><option>Medium</option></Form.Select></Col></Form.Group>
+         <Form.Group as={Row} className="mb-2 align-items-center" controlId="disableCameraCheck"><Form.Label column sm="8"><FaCamera className="me-2" /> Disable Camera on Join:</Form.Label><Col sm="4" className="text-end"><Form.Check type="switch" disabled /></Col></Form.Group>
+         <Form.Group as={Row} className="mb-0 align-items-center" controlId="autoMuteCheck"><Form.Label column sm="8"><FaMicrophoneSlash className="me-2" /> Auto-Mute on Join:</Form.Label><Col sm="4" className="text-end"><Form.Check type="switch" disabled /></Col></Form.Group>
       </div>
 
-      {/* Back Button */}
+      {/* Back Button (Structure remains the same) */}
       <Link to="/" style={{ textDecoration: 'none' }}>
         <Button
           variant={theme === "dark" ? "outline-light" : "outline-primary"}
@@ -204,7 +213,7 @@ const Settings = () => {
   );
 };
 
-// --- Styles ---
+// --- Styles (Copied from your provided code) ---
 const sectionStyle = (theme) => ({
   backgroundColor: theme === "dark" ? "#2a2a2a" : "#f0f0f0",
   border: theme === 'dark' ? '1px solid #444' : '1px solid #ddd',
