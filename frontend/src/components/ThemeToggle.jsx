@@ -1,13 +1,17 @@
 import React, { useContext } from "react";
 import { FaSun, FaMoon } from "react-icons/fa";
-import { ThemeContext } from "../components/ThemeContext"; // Import ThemeContext
+import { ThemeContext } from "../components/ThemeContext";
 
 const ThemeToggle = () => {
-  const { theme, setTheme } = useContext(ThemeContext); // Get theme & setTheme from context
+  const { theme, darkModeEnabled, setTheme } = useContext(ThemeContext);
 
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   };
+
+  if (!darkModeEnabled) {
+    return null; // Hide the toggle button when dark mode feature is disabled
+  }
 
   return (
     <div className="d-flex align-items-center me-4">

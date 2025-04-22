@@ -39,7 +39,7 @@ const Video = () => {
       return;
     }
 
-    socketRef.current = new WebSocket("ws://localhost:8080");
+    socketRef.current = new WebSocket("wss://textanon.onrender.com");
     console.log(`${new Date().toLocaleTimeString()} - WebSocket connecting to ws://localhost:8080`);
 
     socketRef.current.onopen = () => {

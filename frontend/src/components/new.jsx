@@ -7,7 +7,8 @@ import { FaClock, FaFont, FaVideo, FaMicrophoneSlash, FaCamera, FaArrowLeft } fr
 const Settings = () => {
   const {
     theme,
-    setTheme,
+    darkModeEnabled,
+    setDarkModeEnabled,
     selfDestructEnabled,
     setSelfDestructEnabled,
     destructTime,
@@ -18,8 +19,8 @@ const Settings = () => {
 
   const [customTimeError, setCustomTimeError] = useState("");
 
-  const handleThemeToggle = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
+  const handleDarkModeToggle = () => {
+    setDarkModeEnabled(!darkModeEnabled);
   };
 
   const handleSelfDestructToggle = (e) => {
@@ -48,40 +49,27 @@ const Settings = () => {
   };
 
   return (
-    <div
-      style={{
-        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa",
-        color: theme === "dark" ? "#ffffff" : "#333333",
-        minHeight: "100vh",
-        padding: "20px",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        transition: "background-color 0.3s ease, color 0.3s ease",
-      }}
-    >
-      <h2 className="mb-4">Settings</h2>
-
-      {/* General Section */}
-      <div style={sectionStyle(theme)} className="mb-3">
-        <h3 style={headerStyle}>General</h3>
-        <Form.Group as={Row} className="mb-0 align-items-center" controlId="themeToggle">
-          <Form.Label column sm="8">
-            Theme:
+    <div className="container mt-5">
+      <Row className="mb-4">
+        <Col>
+          <Link to="/" className="text-decoration-none">
+            <FaArrowLeft /> Back to Home
+          </Link>
+        </Col>
+      </Row>
+      <h2>Settings</h2>
+      <Form>
+        <Form.Group as={Row} className="mb-3">
+          <Form.Label column sm={2}>
+            Dark Mode Feature
           </Form.Label>
-          <Col sm="4" className="text-end">
-            <Button
-              variant={theme === "dark" ? "outline-light" : "outline-dark"}
-              onClick={handleThemeToggle}
-              size="sm"
-            >
-              {theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          <Col sm={10}>
+            <Button onClick={handleDarkModeToggle}>
+              {darkModeEnabled ? "Disable Dark Mode" : "Enable Dark Mode"}
             </Button>
           </Col>
         </Form.Group>
-      </div>
-
-      {/* Message and Chat Section */}
+{/* Message and Chat Section */}
       <div style={sectionStyle(theme)} className="mb-3">
         <h3 style={headerStyle}>Message & Chat</h3>
         <Form.Group as={Row} className="mb-2 align-items-center" controlId="selfDestructToggle">
@@ -199,46 +187,46 @@ const Settings = () => {
           <FaArrowLeft className="me-2" />
           Back to Home
         </Button>
-      </Link>
+      </Link>      </Form>
     </div>
   );
 };
 
 // --- Styles ---
 const sectionStyle = (theme) => ({
-  backgroundColor: theme === "dark" ? "#2a2a2a" : "#f0f0f0",
-  border: theme === 'dark' ? '1px solid #444' : '1px solid #ddd',
-  padding: "15px 20px",
-  marginBottom: "20px",
-  width: "90%",
-  maxWidth: "600px",
-  borderRadius: "8px",
-  boxShadow: theme === 'dark' ? '0 2px 5px rgba(0,0,0,0.3)' : '0 2px 5px rgba(0,0,0,0.1)',
-});
-
-const headerStyle = {
-  marginBottom: '15px',
-  fontSize: '1.1rem',
-  borderBottom: '1px solid rgba(128, 128, 128, 0.3)',
-  paddingBottom: '8px',
-};
-
-const selectStyle = (theme) => ({
-  padding: "0.375rem 0.75rem",
-  backgroundColor: theme === "dark" ? "#333" : "#fff",
-  color: theme === "dark" ? "#fff" : "#333",
-  border: theme === 'dark' ? '1px solid #555' : '1px solid #ccc',
-  borderRadius: "4px",
-  fontSize: '0.9rem',
-});
-
-const inputStyle = (theme) => ({
-  padding: "0.375rem 0.75rem",
-  backgroundColor: theme === "dark" ? "#333" : "#fff",
-  color: theme === "dark" ? "#fff" : "#333",
-  border: theme === 'dark' ? '1px solid #555' : '1px solid #ccc',
-  borderRadius: "4px",
-  fontSize: '0.9rem',
-});
+    backgroundColor: theme === "dark" ? "#2a2a2a" : "#f0f0f0",
+    border: theme === 'dark' ? '1px solid #444' : '1px solid #ddd',
+    padding: "15px 20px",
+    marginBottom: "20px",
+    width: "90%",
+    maxWidth: "600px",
+    borderRadius: "8px",
+    boxShadow: theme === 'dark' ? '0 2px 5px rgba(0,0,0,0.3)' : '0 2px 5px rgba(0,0,0,0.1)',
+  });
+  
+  const headerStyle = {
+    marginBottom: '15px',
+    fontSize: '1.1rem',
+    borderBottom: '1px solid rgba(128, 128, 128, 0.3)',
+    paddingBottom: '8px',
+  };
+  
+  const selectStyle = (theme) => ({
+    padding: "0.375rem 0.75rem",
+    backgroundColor: theme === "dark" ? "#333" : "#fff",
+    color: theme === "dark" ? "#fff" : "#333",
+    border: theme === 'dark' ? '1px solid #555' : '1px solid #ccc',
+    borderRadius: "4px",
+    fontSize: '0.9rem',
+  });
+  
+  const inputStyle = (theme) => ({
+    padding: "0.375rem 0.75rem",
+    backgroundColor: theme === "dark" ? "#333" : "#fff",
+    color: theme === "dark" ? "#fff" : "#333",
+    border: theme === 'dark' ? '1px solid #555' : '1px solid #ccc',
+    borderRadius: "4px",
+    fontSize: '0.9rem',
+  });
 
 export default Settings;
