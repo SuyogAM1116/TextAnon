@@ -39,8 +39,8 @@ const Video = () => {
       return;
     }
 
-    socketRef.current = new WebSocket("wss://textanon.onrender.com");
-    console.log(`${new Date().toLocaleTimeString()} - WebSocket connecting to wss://textanon.onrender.com`);
+    socketRef.current = new WebSocket("ws://localhost:8080");
+    console.log(`${new Date().toLocaleTimeString()} - WebSocket connecting to ws://localhost:8080`);
 
     socketRef.current.onopen = () => {
       console.log(`${new Date().toLocaleTimeString()} - WebSocket connected`);
@@ -71,7 +71,7 @@ const Video = () => {
         if (parsedMessage.type === "userID") {
           console.log(`${new Date().toLocaleTimeString()} - Received userID:`, parsedMessage.userID);
         } else if (parsedMessage.type === "hey") {
-          console.log(`${new Date().toLocaleTimeString()} - Incoming call from:`, parsedMessage.callerID);
+          console.log(`${new Date().toLocaleTimeString()} - Incoming call from:`, parsedMessage.callerID, "signal:", parsedMessage.signal);
           setReceivingCall(true);
           setCallerSignal(parsedMessage.signal);
         } else if (parsedMessage.type === "ice-candidate") {
@@ -195,6 +195,7 @@ const Video = () => {
       streamRef.current = currentStream;
       if (userVideoRef.current) {
         userVideoRef.current.srcObject = currentStream;
+        userVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Local video play error:`, err));
         console.log(`${new Date().toLocaleTimeString()} - Local stream set with tracks:`, currentStream.getTracks());
       }
       setMediaStatus("Media devices ready, connecting...");
@@ -202,7 +203,7 @@ const Video = () => {
       initiatePeerConnection(currentStream);
     } catch (error) {
       console.error(`${new Date().toLocaleTimeString()} - getUserMedia error:`, error);
-      setMediaStatus(`Error accessing media: ${error.message}`);
+      setMediaStatus(`Error accessing media: ${error.message}. Check camera/mic permissions.`);
       setCallStarted(false);
     }
   };
@@ -216,6 +217,8 @@ const Video = () => {
         iceServers: [
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun1.l.google.com:19302" },
+          { urls: "stun:stun2.l.google.com:19302" },
+          { urls: "stun:stun3.l.google.com:19302" },
           {
             urls: "turn:openrelay.metered.ca:80",
             username: "openrelayproject",
@@ -257,12 +260,12 @@ const Video = () => {
     peer.on("stream", (remoteStream) => {
       console.log(`${new Date().toLocaleTimeString()} - Initiator received remote stream with tracks:`, remoteStream.getTracks());
       if (remoteStream.getVideoTracks().length === 0) {
-        console.error(`${new Date().toLocaleTimeString()} - No video tracks in remote stream. Check TURN server or network.`);
-        setMediaStatus("No video from partner. Network or TURN issue?");
+        console.error(`${new Date().toLocaleTimeString()} - No video tracks in remote stream. Check network or permissions.`);
+        setMediaStatus("No video from partner. Check network or permissions.");
       }
       if (partnerVideoRef.current) {
         partnerVideoRef.current.srcObject = remoteStream;
-        partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err));
+        partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Remote video play error:`, err));
         console.log(`${new Date().toLocaleTimeString()} - Remote stream set to partnerVideoRef`);
       }
       setPeerConnected(true);
@@ -312,6 +315,7 @@ const Video = () => {
         streamRef.current = currentStream;
         if (userVideoRef.current) {
           userVideoRef.current.srcObject = currentStream;
+          userVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Local video play error:`, err));
           console.log(`${new Date().toLocaleTimeString()} - Local stream set with tracks:`, currentStream.getTracks());
         }
 
@@ -323,6 +327,8 @@ const Video = () => {
             iceServers: [
               { urls: "stun:stun.l.google.com:19302" },
               { urls: "stun:stun1.l.google.com:19302" },
+              { urls: "stun:stun2.l.google.com:19302" },
+              { urls: "stun:stun3.l.google.com:19302" },
               {
                 urls: "turn:openrelay.metered.ca:80",
                 username: "openrelayproject",
@@ -339,6 +345,9 @@ const Video = () => {
         peerRef.current = peer;
 
         peer.on("signal", (signal) => {
+          const signalKey = JSON.stringify(signal);
+          if (signalSentRef.current.has(signalKey)) return;
+          signalSentRef.current.add(signalKey);
           console.log(`${new Date().toLocaleTimeString()} - Answerer signaling:`, signal);
           if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
             socketRef.current.send(JSON.stringify({ type: "acceptCall", signal }));
@@ -361,12 +370,12 @@ const Video = () => {
         peer.on("stream", (remoteStream) => {
           console.log(`${new Date().toLocaleTimeString()} - Answerer received remote stream with tracks:`, remoteStream.getTracks());
           if (remoteStream.getVideoTracks().length === 0) {
-            console.error(`${new Date().toLocaleTimeString()} - No video tracks in remote stream. Check TURN server or network.`);
-            setMediaStatus("No video from partner. Network or TURN issue?");
+            console.error(`${new Date().toLocaleTimeString()} - No video tracks in remote stream. Check network or permissions.`);
+            setMediaStatus("No video from partner. Check network or permissions.");
           }
           if (partnerVideoRef.current) {
             partnerVideoRef.current.srcObject = remoteStream;
-            partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Video play error:`, err));
+            partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Remote video play error:`, err));
             console.log(`${new Date().toLocaleTimeString()} - Remote stream set to partnerVideoRef`);
           }
           setPeerConnected(true);
@@ -407,7 +416,7 @@ const Video = () => {
         setCallStarted(true);
       }).catch((error) => {
         console.error(`${new Date().toLocaleTimeString()} - Answerer getUserMedia error:`, error);
-        setMediaStatus(`Error accessing media: ${error.message}`);
+        setMediaStatus(`Error accessing media: ${error.message}. Check camera/mic permissions.`);
         cleanup();
       });
     }
