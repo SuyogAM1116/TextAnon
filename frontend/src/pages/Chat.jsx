@@ -76,7 +76,9 @@ const Chat = () => {
 
         setStatus("Connecting to chat server...");
         setIsConnecting(true);
+        // Use wss://textanon.onrender.com for production, or ws://localhost:8080 for local testing
         socketRef.current = new WebSocket("wss://textanon.onrender.com");
+        // socketRef.current = new WebSocket("ws://localhost:8080"); // Uncomment for local testing
         console.log("WebSocket connecting to: wss://textanon.onrender.com");
 
         socketRef.current.onopen = () => {
@@ -250,15 +252,34 @@ const Chat = () => {
     const handleModerationWarning = (received) => {
         setStatus(received.text);
         console.log("Moderation Warning:", received.text);
+        // Display warning in chat box for better visibility
+        setMessages((prev) => [...prev, {
+            senderID: "system",
+            senderName: "System",
+            text: received.text,
+            timestamp: Date.now()
+        }]);
     };
 
     const handleMuteMessage = (received) => {
         setIsMuted(true);
         setStatus(received.text);
         console.log("Mute:", received.text);
+        setMessages((prev) => [...prev, {
+            senderID: "system",
+            senderName: "System",
+            text: received.text,
+            timestamp: Date.now()
+        }]);
         setTimeout(() => {
             setIsMuted(false);
             setStatus("You can now send messages again.");
+            setMessages((prev) => [...prev, {
+                senderID: "system",
+                senderName: "System",
+                text: "You can now send messages again.",
+                timestamp: Date.now()
+            }]);
         }, received.duration || 300000); // Default 5 minutes
     };
 
@@ -463,9 +484,16 @@ const Chat = () => {
                             <div style={{ maxWidth: '400px', margin: '20px auto', padding: '20px', background: theme === 'dark' ? '#1e1e1e' : '#fff', borderRadius: '8px', boxShadow: theme === 'dark' ? '0 4px 8px rgba(255,255,255,0.1)' : '0 4px 8px rgba(0,0,0,0.1)' }}>
                                 <h3 className="text-center mb-4">Enter Chat</h3>
                                 <Form>
-                                    <Form.Group className="mb-3"><Form.Label>Nickname:</Form.Label><Form.Control type="text" placeholder="Your nickname" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={handleNameSelectionKeyPress} autoFocus /></Form.Group>
-                                    <div className="d-grid"><Button variant="primary" onClick={startChat} disabled={!name.trim()}>Start Chat</Button></div>
-                                    {status && status !== "Connecting..." && status !== "Disconnected." && !status.startsWith("Finding") && !status.startsWith("Connected") && <p className={`text-center mt-2 small ${status.startsWith('Enter') ? 'text-danger' : 'text-muted'}`}>{status}</p>}
+                                    <Form.Group className="mb-3">
+                                        <Form.Label>Nickname:</Form.Label>
+                                        <Form.Control type="text" placeholder="Your nickname" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={handleNameSelectionKeyPress} autoFocus />
+                                    </Form.Group>
+                                    <div className="d-grid">
+                                        <Button variant="primary" onClick={startChat} disabled={!name.trim()}>Start Chat</Button>
+                                    </div>
+                                    {status && status !== "Connecting..." && status !== "Disconnected." && !status.startsWith("Finding") && !status.startsWith("Connected") && (
+                                        <p className={`text-center mt-2 small ${status.startsWith('Enter') ? 'text-danger' : 'text-muted'}`}>{status}</p>
+                                    )}
                                 </Form>
                             </div>
                         </Col>
@@ -475,25 +503,59 @@ const Chat = () => {
                         <Col md={8} lg={6} className="p-3 rounded d-flex flex-column" style={{ backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff", color: theme === "dark" ? "#ffffff" : "#333333", border: theme === "dark" ? "1px solid #333" : "1px solid #ddd", boxShadow: theme === "dark" ? "0px 4px 15px rgba(0, 0, 0, 0.2)" : "0px 4px 15px rgba(0, 0, 0, 0.1)", transition: "background-color 0.3s ease, color 0.3s ease, border 0.3s ease", display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', minHeight: '450px', maxHeight: '85vh' }}>
                             <h2 className="text-center" style={{ fontSize: '1.5rem', marginBottom: '0.25rem' }}>Anonymous Chat</h2>
                             <p className="text-center mb-1" style={{fontSize: '0.9rem'}}>Nickname: <span style={{ fontWeight: 'bold' }}>{name}</span></p>
-                            <div className="text-center my-1"><small style={{ fontStyle: "italic", fontSize: '0.85rem', opacity: 0.9 }}>{status}</small>{isConnecting && <Spinner animation="border" size="sm" className="ms-2" />}</div>
+                            <div className="text-center my-1">
+                                <small style={{ fontStyle: "italic", fontSize: '0.85rem', opacity: 0.9 }}>{status}</small>
+                                {isConnecting && <Spinner animation="border" size="sm" className="ms-2" />}
+                            </div>
                             <div ref={chatContainerRef} className="chat-box p-3 rounded mt-2 flex-grow-1" style={{ overflowY: "auto", display: "flex", flexDirection: "column", backgroundColor: theme === "dark" ? "#2a2a2a" : "#f1f1f1", marginBottom: '10px', border: theme === 'dark' ? '1px solid #444' : '1px solid #eee' }}>
                                 {messages.map((msg, index) => (
-                                    <div key={index} style={{ width: "fit-content", maxWidth: "80%", alignSelf: msg.senderID === userIDRef.current ? "flex-end" : "flex-start", backgroundColor: msg.senderID === userIDRef.current ? (theme === 'dark' ? '#0b533f' : '#d1e7dd') : (theme === 'dark' ? '#0a4a8f' : '#cfe2ff'), color: theme === 'dark' ? '#e0e0e0' : '#000', padding: "8px 12px", borderRadius: msg.senderID === userIDRef.current ? "15px 15px 5px 15px" : "15px 15px 15px 5px", marginBottom: "8px", fontSize: "1rem", wordBreak: 'break-word', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', border: theme === 'dark' ? '1px solid #444' : '1px solid #ccc' }}>
-                                        {msg.senderID !== userIDRef.current && (<strong style={{ display: 'block', marginBottom: '3px', fontSize: '0.75rem', opacity: 0.8, color: theme === 'dark' ? '#aaa' : '#555' }}>{msg.senderName || userMap[msg.senderID] || "Partner"}</strong>)}
-                                        {msg.text.startsWith('<Decryption') ? (<span style={{fontStyle: 'italic', opacity: 0.7}}>{msg.text}</span>) : (msg.text)}
-                                        <span style={{fontSize: '0.7rem', opacity: 0.6, display: 'block', textAlign: 'right', marginTop: '4px'}}>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <div key={index} style={{ width: "fit-content", maxWidth: "80%", alignSelf: msg.senderID === userIDRef.current || msg.senderID === "system" ? "flex-end" : "flex-start", backgroundColor: msg.senderID === "system" ? (theme === 'dark' ? '#444' : '#eee') : msg.senderID === userIDRef.current ? (theme === 'dark' ? '#0b533f' : '#d1e7dd') : (theme === 'dark' ? '#0a4a8f' : '#cfe2ff'), color: theme === 'dark' ? '#e0e0e0' : '#000', padding: "8px 12px", borderRadius: msg.senderID === userIDRef.current || msg.senderID === "system" ? "15px 15px 5px 15px" : "15px 15px 15px 5px", marginBottom: "8px", fontSize: "1rem", wordBreak: 'break-word', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', border: theme === 'dark' ? '1px solid #444' : '1px solid #ccc' }}>
+                                        {msg.senderID !== userIDRef.current && msg.senderID !== "system" && (
+                                            <strong style={{ display: 'block', marginBottom: '3px', fontSize: '0.75rem', opacity: 0.8, color: theme === 'dark' ? '#aaa' : '#555' }}>
+                                                {msg.senderName || userMap[msg.senderID] || "Partner"}
+                                            </strong>
+                                        )}
+                                        {msg.text.startsWith('<Decryption') ? (
+                                            <span style={{fontStyle: 'italic', opacity: 0.7}}>{msg.text}</span>
+                                        ) : (
+                                            msg.text
+                                        )}
+                                        <span style={{fontSize: '0.7rem', opacity: 0.6, display: 'block', textAlign: 'right', marginTop: '4px'}}>
+                                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
                                     </div>
                                 ))}
-                                {status.startsWith("Partner disconnected") && (<div className="system-message text-center align-self-center" style={{ width: "fit-content", maxWidth: "90%", backgroundColor: theme === "dark" ? "#444" : "#eee", color: theme === "dark" ? "#ccc" : "#555", padding: "6px 12px", borderRadius: "8px", margin: "10px auto", fontSize: "13px", fontStyle: "italic" }}>{status}</div>)}
+                                {status.startsWith("Partner disconnected") && (
+                                    <div className="system-message text-center align-self-center" style={{ width: "fit-content", maxWidth: "90%", backgroundColor: theme === "dark" ? "#444" : "#eee", color: theme === "dark" ? "#ccc" : "#555", padding: "6px 12px", borderRadius: "8px", margin: "10px auto", fontSize: "13px", fontStyle: "italic" }}>
+                                        {status}
+                                    </div>
+                                )}
                             </div>
                             <InputGroup className="mt-auto">
-                                <Form.Control as="textarea" rows={1} style={{ resize: 'none', overflowY: 'auto', maxHeight: '100px' }} placeholder={isConnecting ? "Connecting..." : isMuted ? "You are muted..." : (!userIDRef.current || !encryptionKeyRef.current || status.includes("Finding") ? "Waiting..." : "Type message...")} value={newMessage} onChange={(e) => setNewMessage(e.target.value)} onKeyDown={handleKeyPress} disabled={isConnecting || !userIDRef.current || !encryptionKeyRef.current || status.includes("Finding") || isMuted} />
-                                <Button variant="primary" onClick={sendMessage} disabled={isConnecting || !newMessage.trim() || !userIDRef.current || !encryptionKeyRef.current || status.includes("Finding") || isMuted}><FaPaperPlane /></Button>
-                                <Button variant="success" className="ms-2" onClick={startVideoCall} disabled={true}><FaVideo /></Button>
+                                <Form.Control
+                                    as="textarea"
+                                    rows={1}
+                                    style={{ resize: 'none', overflowY: 'auto', maxHeight: '100px' }}
+                                    placeholder={isConnecting ? "Connecting..." : isMuted ? "You are muted..." : (!userIDRef.current || !encryptionKeyRef.current || status.includes("Finding") ? "Waiting..." : "Type message...")}
+                                    value={newMessage}
+                                    onChange={(e) => setNewMessage(e.target.value)}
+                                    onKeyDown={handleKeyPress}
+                                    disabled={isConnecting || !userIDRef.current || !encryptionKeyRef.current || status.includes("Finding") || isMuted}
+                                />
+                                <Button variant="primary" onClick={sendMessage} disabled={isConnecting || !newMessage.trim() || !userIDRef.current || !encryptionKeyRef.current || status.includes("Finding") || isMuted}>
+                                    <FaPaperPlane />
+                                </Button>
+                                <Button variant="success" className="ms-2" onClick={startVideoCall} disabled={true}>
+                                    <FaVideo />
+                                </Button>
                             </InputGroup>
                             <div className="d-flex justify-content-between mt-2">
-                                <Button variant="warning" size="sm" onClick={skipToNextUser} disabled={isConnecting || !userIDRef.current || status.includes("Finding")}>Skip Partner</Button>
-                                <Button variant="secondary" size="sm" onClick={goBackToHome}>Leave Chat</Button>
+                                <Button variant="warning" size="sm" onClick={skipToNextUser} disabled={isConnecting || !userIDRef.current || status.includes("Finding")}>
+                                    Skip Partner
+                                </Button>
+                                <Button variant="secondary" size="sm" onClick={goBackToHome}>
+                                    Leave Chat
+                                </Button>
                             </div>
                         </Col>
                     </Row>

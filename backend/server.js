@@ -3,7 +3,7 @@ const WebSocket = require("ws");
 const http = require("http");
 const express = require("express");
 const crypto = require("crypto");
-const Filter = require("bad-words");
+const ProfanityFilter = require("profanity-filter");
 
 const PORT = process.env.PORT || 8080;
 
@@ -14,7 +14,7 @@ const server = new WebSocket.Server({ server: httpServer });
 const clients = new Map(); // Map of userID to { socket, username, encryptionKey, isMuted, muteUntil }
 const waitingQueue = new Set(); // Set of userIDs
 const pairs = new Map(); // Map of userID to partner userID
-const filter = new Filter(); // Initialize bad-words filter
+const filter = new ProfanityFilter(); // Initialize profanity-filter
 
 // Log memory usage periodically
 setInterval(() => {
@@ -282,7 +282,7 @@ server.on("connection", (socket) => {
           );
           return;
         }
-        if (filter.isProfane(decryptedText)) {
+        if (filter.hasProfanity(decryptedText)) {
           socket.send(
             JSON.stringify({
               type: "moderationWarning",

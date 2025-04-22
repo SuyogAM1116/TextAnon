@@ -16,6 +16,7 @@
     "crypto-js": "^4.2.0",
     "dotenv": "^16.4.7",
     "process": "^0.11.10",
+    "profanity-filter": "^0.2.1",
     "react-bootstrap": "^2.10.9",
     "react-icons": "^5.5.0",
     "react-router-dom": "^7.3.0",
