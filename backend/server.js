@@ -207,9 +207,7 @@ server.on("connection", (socket) => {
           encryptionKey: parsedMessage.encryptionKey || "default-key",
         });
         console.log(
-          `👤 User ${userID} registered name: ${parsedMessage.name} and encryption key (start): ${
-            parsedMessage.encryptionKey ? parsedMessage.encryptionKey.substring(0, 8) + "..." : "No Key"
-          }`
+          `👤 User ${userID} registered name: ${parsedMessage.name} and encryption key (start): ${parsedMessage.encryptionKey ? parsedMessage.encryptionKey.substring(0, 8) + "..." : "No Key"}`
         );
         if (socket.readyState === WebSocket.OPEN && !pairs.has(userID)) {
           console.log(`📥 Adding User ${userID} to waiting queue`);
@@ -234,7 +232,7 @@ server.on("connection", (socket) => {
         handleSkip(userID);
       } else if (parsedMessage.type === "callUser") {
         if (partnerSocket?.readyState === WebSocket.OPEN) {
-          console.log(`📞 User ${senderUserID} is initiating a video call to Partner ${partnerUserID}`);
+          console.log(`📞 User ${senderUserID} is initiating a video call to Partner ${partnerUserID} with signal:`, parsedMessage.signal);
           partnerSocket.send(
             JSON.stringify({
               type: "hey",
@@ -254,7 +252,7 @@ server.on("connection", (socket) => {
         }
       } else if (parsedMessage.type === "acceptCall") {
         if (partnerSocket?.readyState === WebSocket.OPEN) {
-          console.log(`✅ User ${senderUserID} accepted video call from Partner ${partnerUserID}`);
+          console.log(`✅ User ${senderUserID} accepted video call from Partner ${partnerUserID} with signal:`, parsedMessage.signal);
           partnerSocket.send(
             JSON.stringify({
               type: "callAccepted",
@@ -273,7 +271,7 @@ server.on("connection", (socket) => {
         }
       } else if (parsedMessage.type === "ice-candidate") {
         if (partnerSocket?.readyState === WebSocket.OPEN) {
-          console.log(`🧊 User ${senderUserID} sending ICE candidate to Partner ${partnerUserID}`);
+          console.log(`🧊 User ${senderUserID} sending ICE candidate to Partner ${partnerUserID}:`, parsedMessage.candidate);
           partnerSocket.send(
             JSON.stringify({
               type: "ice-candidate",
