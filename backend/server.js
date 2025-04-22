@@ -9,7 +9,7 @@ const app = express();
 const httpServer = http.createServer(app);
 const server = new WebSocket.Server({ server: httpServer });
 
-const clients = new Map(); // Map of userID to { socket, username, encryptionKey }
+const clients = new Map(); // Map of userID to { socket, username, encryptionKey, lastActive }
 const waitingQueue = new Set(); // Set of userIDs
 const pairs = new Map(); // Map of userID to partner userID
 
@@ -119,7 +119,7 @@ function removeFromQueue(userID) {
   waitingQueue.delete(userID);
 }
 
-function handleDisconnection(userID) {
+function handleDisconnection(userID, isIntentional = false) {
   logState("handleDisconnection - Entry");
   const client = clients.get(userID);
   if (!client) return;
@@ -133,11 +133,11 @@ function handleDisconnection(userID) {
         JSON.stringify({
           type: "systemMessage",
           sender: "System",
-          text: "Your partner has left. Finding a new match...",
+          text: isIntentional ? "Your partner has ended the call. Finding a new match..." : "Your partner has disconnected. Finding a new match...",
         })
       );
-      partner.socket.send(JSON.stringify({ type: "chatEnded" }));
-      waitingQueue.add(partnerID);
+      partner.socket.send(JSON.stringify({ type: "partnerDisconnected" }));
+      if (!isIntentional) waitingQueue.add(partnerID); // Only requeue if unintentional
     }
     pairs.delete(userID);
     pairs.delete(partnerID);
@@ -148,6 +148,28 @@ function handleDisconnection(userID) {
 
   pairUsers();
   logState("handleDisconnection - Exit");
+}
+
+function handleReconnection(userID, socket) {
+  const existingClient = clients.get(userID);
+  if (existingClient) {
+    existingClient.socket = socket;
+    existingClient.lastActive = Date.now();
+    console.log(`🔄 User ${userID} reconnected`);
+    const partnerID = pairs.get(userID);
+    if (partnerID) {
+      const partner = clients.get(partnerID);
+      if (partner?.socket?.readyState === WebSocket.OPEN) {
+        partner.socket.send(JSON.stringify({ type: "partnerReconnected", partnerID: userID }));
+        socket.send(JSON.stringify({ type: "partnerConnected", partnerID }));
+      }
+    }
+  } else {
+    clients.set(userID, { socket, username: `User ${userID}`, encryptionKey: null, lastActive: Date.now() });
+    socket.send(JSON.stringify({ type: "userID", userID }));
+    console.log(`✅ User ${userID} connected - ID: ${userID}`);
+    logState("Reconnection");
+  }
 }
 
 function handleSkip(userID) {
@@ -186,12 +208,9 @@ function getPartnerSocket(userID) {
   return partnerID ? clients.get(partnerID)?.socket : null;
 }
 
-server.on("connection", (socket) => {
-  const userID = Date.now().toString();
-  clients.set(userID, { socket, username: `User ${userID}`, encryptionKey: null });
-  console.log(`✅ User ${userID} connected - ID: ${userID}`);
-  socket.send(JSON.stringify({ type: "userID", userID }));
-  logState("Connection");
+server.on("connection", (socket, request) => {
+  let userID = request.headers["sec-websocket-key"] || Date.now().toString(); // Use a unique identifier
+  handleReconnection(userID, socket);
 
   socket.on("message", (message) => {
     try {
@@ -205,6 +224,7 @@ server.on("connection", (socket) => {
           socket,
           username: parsedMessage.name || `User ${userID}`,
           encryptionKey: parsedMessage.encryptionKey || "default-key",
+          lastActive: Date.now(),
         });
         console.log(
           `👤 User ${userID} registered name: ${parsedMessage.name} and encryption key (start): ${
@@ -283,6 +303,9 @@ server.on("connection", (socket) => {
         } else {
           console.warn(`⚠️ No valid partner for User ${senderUserID} to send ICE candidate`);
         }
+      } else if (parsedMessage.type === "ping") {
+        socket.send(JSON.stringify({ type: "pong" }));
+        clients.get(userID).lastActive = Date.now();
       }
     } catch (error) {
       console.error(`❌ Error processing message from User ${userID}:`, error);
@@ -296,15 +319,26 @@ server.on("connection", (socket) => {
     }
   });
 
-  socket.on("close", () => {
-    console.log(`❌ User ${userID} disconnected`);
-    handleDisconnection(userID);
+  socket.on("close", (code, reason) => {
+    console.log(`❌ User ${userID} disconnected - Code: ${code}, Reason: ${reason.toString()}`);
+    handleDisconnection(userID, code === 1000); // 1000 is normal closure
   });
 
   socket.on("error", (error) => {
     console.error(`⚠️ WebSocket Error for User ${userID}:`, error.message);
     handleDisconnection(userID);
   });
+
+  // Send periodic ping to keep connection alive
+  const pingInterval = setInterval(() => {
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "ping" }));
+    } else {
+      clearInterval(pingInterval);
+    }
+  }, 30000); // Ping every 30 seconds
+
+  socket.on("close", () => clearInterval(pingInterval));
 });
 
 httpServer.listen(PORT, () => {

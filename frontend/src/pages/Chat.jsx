@@ -68,14 +68,58 @@ const Chat = () => {
 
     // --- WebSocket Functions ---
     const connectWebSocket = () => {
-        if (socketRef.current && (socketRef.current.readyState === WebSocket.OPEN || socketRef.current.readyState === WebSocket.CONNECTING)) return;
-        setStatus("Connecting..."); setIsConnecting(true);
-        socketRef.current = new WebSocket("ws://localhost:8080"); // Update to your production URL if needed
-        console.log("WS Connecting to:", socketRef.current.url);
-        socketRef.current.onopen = () => { console.log("WS Open"); setIsConnecting(false); setStatus("Registering..."); socketRef.current.send(JSON.stringify({ type: "register", name, sessionID, encryptionKey: encryptionKeyRef.current })); clearTimeout(reconnectTimeoutRef.current); };
-        socketRef.current.onmessage = async (event) => { try { const rawData = event.data instanceof Blob ? await event.data.text() : event.data.toString(); console.log(`⬅️ Raw data received:`, rawData); const r = JSON.parse(rawData); handleMessage(r); } catch (e) { console.error("WS Parse Error:", e, event.data); setStatus("Msg Error"); }};
-        socketRef.current.onerror = (err) => { console.error("WS Error:", err); setIsConnecting(false); setStatus("WS Error"); };
-        socketRef.current.onclose = (ev) => { console.log("WS Close:", ev.code); setIsConnecting(false); if (ev.code !== 1000 && chatStarted) { setStatus("Disconnected. Reconnecting..."); reconnectWebSocket(); } else { setStatus("Disconnected."); }};
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+            console.log("WebSocket already connected, skipping reconnection.");
+            return;
+        }
+
+        setStatus("Connecting to chat server...");
+        setIsConnecting(true);
+        socketRef.current = new WebSocket("wss://textanon.onrender.com");
+        console.log("WebSocket connecting to: wss://textanon.onrender.com");
+
+        socketRef.current.onopen = () => {
+            console.log("WebSocket onopen: Connected to WebSocket Server");
+            setIsConnecting(false);
+            setStatus("Registering with server...");
+            socketRef.current.send(JSON.stringify({
+                type: "register",
+                name,
+                sessionID,
+                encryptionKey: encryptionKeyRef.current
+            }));
+            clearTimeout(reconnectTimeoutRef.current);
+        };
+
+        socketRef.current.onmessage = async (event) => {
+            try {
+                const received = event.data instanceof Blob
+                    ? JSON.parse(await event.data.text())
+                    : JSON.parse(event.data);
+                handleMessage(received);
+            } catch (err) {
+                console.error("Error parsing WebSocket message:", err);
+                setStatus("Error processing message.");
+            }
+        };
+
+        socketRef.current.onerror = (err) => {
+            console.error("WebSocket onerror: WebSocket error:", err);
+            setIsConnecting(false);
+            setStatus("WebSocket connection error.");
+            reconnectWebSocket();
+        };
+
+        socketRef.current.onclose = (event) => {
+            console.log("WebSocket onclose: WebSocket closed", event);
+            setIsConnecting(false);
+            if (event.code !== 1000) {
+                setStatus("Disconnected from chat server. Reconnecting...");
+                reconnectWebSocket();
+            } else {
+                setStatus("Disconnected from chat server.");
+            }
+        };
     };
     const reconnectWebSocket = () => { if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current); reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000); };
     const disconnectWebSocket = () => { clearTimeout(reconnectTimeoutRef.current); reconnectTimeoutRef.current = null; if (socketRef.current) { if(socketRef.current.readyState === WebSocket.OPEN) socketRef.current.close(1000, "Disconnect"); socketRef.current = null; } setIsConnecting(false); };
