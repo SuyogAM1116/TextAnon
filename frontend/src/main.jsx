@@ -12,7 +12,7 @@ window.Buffer = Buffer
 window.process = process
 
 createRoot(document.getElementById('root')).render(
-  <StrictMode>
+  // <StrictMode>
     <App />
-  </StrictMode>
+  // </StrictMode>
 )
