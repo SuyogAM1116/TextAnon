@@ -53,7 +53,7 @@ const Chat = () => {
         setStatus("Connecting to chat server...");
         setIsConnecting(true);
         socketRef.current = new WebSocket("wss://textanon.onrender.com");
-        console.log("WebSocket connecting to: ws://localhost:8080");
+        console.log("WebSocket connecting to: wss://textanon.onrender.com");
 
         socketRef.current.onopen = () => {
             console.log("WebSocket onopen: Connected to WebSocket Server");
