@@ -97,9 +97,7 @@ const Chat = () => {
         setStatus("Connecting to chat server...");
         setIsConnecting(true);
         // Use wss://textanon.onrender.com for production, or ws://localhost:8080 for local testing
-        const wsUrl = process.env.NODE_ENV === 'production'
-            ? "wss://textanon.onrender.com"
-            : "ws://localhost:8080";
+        const wsUrl = "wss://textanon.onrender.com"
         console.log(`WebSocket connecting to: ${wsUrl}`);
         socketRef.current = new WebSocket(wsUrl);
 
