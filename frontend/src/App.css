@@ -1,3 +1,8 @@
+/* Keep your existing #root, .logo, @keyframes, .card, .read-the-docs, 
+   .navbar, .hero-section, .features-section, .footer styles as they are.
+   The following are additions/modifications specifically for chat styling.
+*/
+
 #root {
   max-width: 100%;
   margin: 0 auto;
@@ -43,7 +48,7 @@
 
 /* Navbar */
 .navbar {
-  background-color: #121212 !important; /* Dark navy */
+  background-color: #121212 !important;
   position: sticky;
   top: 0;
   width: 100%;
@@ -59,15 +64,14 @@
 
 /* Feature Section */
 .features-section {
-  background-color: rgba(88, 82, 87, 0.592); 
-  
+  background-color: rgba(88, 82, 87, 0.592);
   color: white;
   padding: 50px 0;
 }
 
 /* Footer */
 .footer {
-  background-color: rgb(17, 24, 34); /* Black */
+  background-color: rgb(17, 24, 34);
   color: white;
   text-align: center;
   padding: 20px 0;

@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/package.json",
   "name": "backend",
   "version": "1.0.0",
   "main": "index.js",
@@ -15,7 +16,6 @@
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "profanity-filter": "^0.2.1",
-    "socket.io": "^4.8.1",
-    "ws": "^8.18.1"
+    "socket.io": "^4.8.1"
   }
 }

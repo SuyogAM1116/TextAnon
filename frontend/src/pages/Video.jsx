@@ -1,647 +1,404 @@
 import React, { useEffect, useRef, useState, useContext } from "react";
-import { ThemeContext } from "../components/ThemeContext";
+import { useNavigate, useLocation } from "react-router-dom";
 import Peer from "simple-peer";
+import io from "socket.io-client";
+import { Button, Container, Row, Col, Form, Spinner, Alert } from "react-bootstrap";
+import { FaPhoneSlash, FaMicrophone, FaMicrophoneSlash, FaVideo as FaVideoIcon, FaVideoSlash, FaRedo } from "react-icons/fa";
+import { ThemeContext } from "../components/ThemeContext"; // Ensure path is correct
 
 const Video = () => {
-  const { theme } = useContext(ThemeContext);
-  const [username, setUsername] = useState("");
-  const [nameConfirmed, setNameConfirmed] = useState(false);
-  const [stream, setStream] = useState(null);
-  const [receivingCall, setReceivingCall] = useState(false);
-  const [callerSignal, setCallerSignal] = useState(null);
-  const [callAccepted, setCallAccepted] = useState(false);
-  const [callStarted, setCallStarted] = useState(false);
-  const [peerConnected, setPeerConnected] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [videoEnabled, setVideoEnabled] = useState(true);
-  const [mediaStatus, setMediaStatus] = useState("Waiting to start media");
-  const [wsConnected, setWsConnected] = useState(false);
-  const [showRetry, setShowRetry] = useState(false);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [encryptionKey, setEncryptionKey] = useState(null);
-  const [iceConnectionState, setIceConnectionState] = useState("new");
+    const { theme } = useContext(ThemeContext);
+    const navigate = useNavigate();
+    const location = useLocation();
 
-  const socketRef = useRef(null);
-  const userVideoRef = useRef(null);
-  const partnerVideoRef = useRef(null);
-  const peerRef = useRef(null);
-  const streamRef = useRef(null);
-  const reconnectAttempts = useRef(0);
-  const maxReconnectAttempts = 10;
-  const baseReconnectInterval = 3000;
-  const signalSentRef = useRef(new Set());
+    const passedState = location.state || {};
+    const initialPartnerID = passedState.partnerID;
+    const initialPartnerName = passedState.partnerName;
+    const initialIsInitiator = passedState.initiator;
 
-  const connectWebSocket = () => {
-    if (reconnectAttempts.current >= maxReconnectAttempts) {
-      console.log(`${new Date().toLocaleTimeString()} - Max WebSocket reconnection attempts reached`);
-      setMediaStatus("Failed to connect to signaling server. Please retry or refresh.");
-      setShowRetry(true);
-      return;
-    }
+    const [name, setName] = useState(localStorage.getItem('videoCallUsername') || "");
+    const [nameConfirmed, setNameConfirmed] = useState(false);
 
-    socketRef.current = new WebSocket("wss://textanon.onrender.com");
-    console.log(`${new Date().toLocaleTimeString()} - WebSocket connecting to wss://textanon.onrender.com`);
+    const [socket, setSocket] = useState(null);
+    const [mySockID, setMySockID] = useState(null);
+    const [partner, setPartner] = useState({ id: initialPartnerID || null, name: initialPartnerName || null });
 
-    socketRef.current.onopen = () => {
-      console.log(`${new Date().toLocaleTimeString()} - WebSocket connected`);
-      setWsConnected(true);
-      setMediaStatus("Connected to signaling server");
-      setShowRetry(false);
-      reconnectAttempts.current = 0;
+    const [localStream, setLocalStream] = useState(null);
+    const [peer, setPeer] = useState(null);
+    const [isInitiator, setIsInitiator] = useState(initialIsInitiator !== undefined ? initialIsInitiator : false);
+
+    const [callStatus, setCallStatus] = useState("Enter name to start.");
+    const [error, setError] = useState('');
+    const [callActive, setCallActive] = useState(false);
+    const [isConnectingSocket, setIsConnectingSocket] = useState(false);
+
+    const myVideoRef = useRef(null);
+    const partnerVideoRef = useRef(null);
+    const nameInputRef = useRef(null);
+
+    const [isMuted, setIsMuted] = useState(false);
+    const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+
+    const handleNameConfirm = (e) => {
+        e.preventDefault();
+        if (!name.trim()) { setError("Please enter a name."); return; }
+        localStorage.setItem('videoCallUsername', name);
+        setNameConfirmed(true);
+        setCallStatus("Initializing..."); setError('');
     };
 
-    socketRef.current.onerror = (error) => {
-      console.error(`${new Date().toLocaleTimeString()} - WebSocket error:`, error);
-      setMediaStatus(`Signaling server error: ${error.message || "Unable to connect"}`);
-      setWsConnected(false);
-    };
-
-    socketRef.current.onclose = (event) => {
-      console.log(`${new Date().toLocaleTimeString()} - WebSocket disconnected:`, event.reason);
-      setWsConnected(false);
-      setMediaStatus(`Disconnected from signaling server: ${event.reason || "Connection closed"}`);
-      reconnectAttempts.current += 1;
-      const delay = baseReconnectInterval * Math.pow(2, reconnectAttempts.current);
-      setTimeout(connectWebSocket, delay);
-    };
-
-    socketRef.current.onmessage = (event) => {
-      try {
-        const parsedMessage = JSON.parse(event.data);
-        if (parsedMessage.type === "userID") {
-          console.log(`${new Date().toLocaleTimeString()} - Received userID:`, parsedMessage.userID);
-        } else if (parsedMessage.type === "hey") {
-          console.log(`${new Date().toLocaleTimeString()} - Incoming call from:`, parsedMessage.callerID, "signal:", parsedMessage.signal);
-          if (!receivingCall) {
-            setReceivingCall(true);
-            setCallerSignal(parsedMessage.signal);
-          }
-        } else if (parsedMessage.type === "ice-candidate") {
-          if (peerRef.current && parsedMessage.candidate) {
-            console.log(`${new Date().toLocaleTimeString()} - Adding ICE candidate:`, parsedMessage.candidate);
-            peerRef.current.addIceCandidate(new RTCIceCandidate(parsedMessage.candidate)).catch((err) =>
-              console.error(`${new Date().toLocaleTimeString()} - ICE candidate error:`, err)
-            );
-          }
-        } else if (parsedMessage.type === "callAccepted") {
-          console.log(`${new Date().toLocaleTimeString()} - Call accepted, signaling answer:`, parsedMessage.signal);
-          if (peerRef.current) {
-            peerRef.current.signal(parsedMessage.signal);
-          }
-        } else if (parsedMessage.type === "systemMessage") {
-          setMediaStatus(parsedMessage.text);
-        } else if (parsedMessage.type === "partnerConnected") {
-          console.log(`${new Date().toLocaleTimeString()} - Partner connected:`, parsedMessage.partnerID);
-          setMediaStatus("Connected to a partner");
-        } else if (parsedMessage.type === "chat") {
-          console.log(`${new Date().toLocaleTimeString()} - Received chat from ${parsedMessage.senderName}:`, parsedMessage.text);
-          setChatMessages((prev) => [
-            ...prev,
-            { sender: parsedMessage.senderName, text: parsedMessage.text },
-          ]);
-        } else if (parsedMessage.type === "encryptionKey") {
-          console.log(`${new Date().toLocaleTimeString()} - Received encryption key (start):`, parsedMessage.key.substring(0, 8) + "...");
-          setEncryptionKey(parsedMessage.key);
-        } else if (parsedMessage.type === "chatEnded") {
-          console.log(`${new Date().toLocaleTimeString()} - Chat ended`);
-          setChatMessages([]);
-          setEncryptionKey(null);
-          setPeerConnected(false);
-          setMediaStatus("Partner disconnected. Waiting for new match...");
-        }
-      } catch (error) {
-        console.error(`${new Date().toLocaleTimeString()} - WebSocket message error:`, error);
-      }
-    };
-  };
-
-  const handleRetry = () => {
-    console.log(`${new Date().toLocaleTimeString()} - Manual retry initiated`);
-    reconnectAttempts.current = 0;
-    setShowRetry(false);
-    connectWebSocket();
-  };
-
-  useEffect(() => {
-    console.log(`${new Date().toLocaleTimeString()} - useEffect: Component mounted`);
-    connectWebSocket();
-    return () => {
-      console.log(`${new Date().toLocaleTimeString()} - useEffect cleanup: Component unmounting`);
-      cleanup();
-    };
-  }, []);
-
-  const cleanup = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-      setStream(null);
-      console.log(`${new Date().toLocaleTimeString()} - Cleanup: Local stream stopped`);
-    }
-    if (peerRef.current) {
-      peerRef.current.destroy();
-      peerRef.current = null;
-      console.log(`${new Date().toLocaleTimeString()} - Cleanup: Peer destroyed`);
-    }
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.close();
-      console.log(`${new Date().toLocaleTimeString()} - Cleanup: WebSocket closed`);
-    }
-    signalSentRef.current.clear();
-    resetCallState();
-  };
-
-  const resetCallState = () => {
-    setCallStarted(false);
-    setReceivingCall(false);
-    setCallerSignal(null);
-    setCallAccepted(false);
-    setPeerConnected(false);
-    setMediaStatus("Ready to start call");
-    setChatMessages([]);
-    setEncryptionKey(null);
-    setIceConnectionState("new");
-  };
-
-  const handleNameConfirm = () => {
-    if (username.trim() !== "") {
-      setNameConfirmed(true);
-      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.send(
-          JSON.stringify({
-            type: "register",
-            name: username,
-            encryptionKey: `key-${username}-${Date.now()}`,
-          })
-        );
-        console.log(`${new Date().toLocaleTimeString()} - Sent register message for:`, username);
-      } else {
-        setMediaStatus("Cannot register: Signaling server not connected.");
-      }
-    }
-  };
-
-  const startVideoCall = async () => {
-    if (!wsConnected) {
-      setMediaStatus("Cannot start call: Signaling server not connected.");
-      return;
-    }
-
-    console.log(`${new Date().toLocaleTimeString()} - startVideoCall: Initiating call`);
-    setCallStarted(true);
-    setMediaStatus("Getting media devices...");
-
-    try {
-      const currentStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      setStream(currentStream);
-      streamRef.current = currentStream;
-      if (userVideoRef.current) {
-        userVideoRef.current.srcObject = currentStream;
-        userVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Local video play error:`, err));
-        console.log(`${new Date().toLocaleTimeString()} - Local stream set with tracks:`, currentStream.getTracks());
-      }
-      setMediaStatus("Media devices ready, connecting...");
-      signalSentRef.current.clear();
-      initiatePeerConnection(currentStream);
-    } catch (error) {
-      console.error(`${new Date().toLocaleTimeString()} - getUserMedia error:`, error);
-      setMediaStatus(`Error accessing media: ${error.message}. Check camera/mic permissions.`);
-      setCallStarted(false);
-    }
-  };
-
-  const initiatePeerConnection = (currentStream) => {
-    const peer = new Peer({
-      initiator: true,
-      trickle: true,
-      stream: currentStream,
-      config: {
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          {
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject",
-          },
-          {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject",
-          },
-        ],
-      },
-    });
-    peerRef.current = peer;
-
-    peer.on("signal", (signal) => {
-      const signalKey = JSON.stringify(signal);
-      if (signalSentRef.current.has(signalKey)) return;
-      signalSentRef.current.add(signalKey);
-      console.log(`${new Date().toLocaleTimeString()} - Initiator signaling:`, signal);
-      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-        socketRef.current.send(JSON.stringify({ type: "callUser", signal }));
-      } else {
-        console.error(`${new Date().toLocaleTimeString()} - Cannot send signal: WebSocket not open`);
-        setMediaStatus("Failed to send call signal: Signaling server disconnected.");
-        cleanup();
-      }
-    });
-
-    peer.on("icecandidate", (event) => {
-      if (event.candidate) {
-        console.log(`${new Date().toLocaleTimeString()} - Initiator ICE candidate:`, event.candidate);
-        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-          socketRef.current.send(JSON.stringify({ type: "ice-candidate", candidate: event.candidate }));
-        }
-      }
-    });
-
-    peer.on("stream", (remoteStream) => {
-      console.log(`${new Date().toLocaleTimeString()} - Initiator received remote stream with tracks:`, remoteStream.getTracks());
-      if (remoteStream.getVideoTracks().length === 0) {
-        console.error(`${new Date().toLocaleTimeString()} - No video tracks in remote stream. Check network or permissions.`);
-        setMediaStatus("No video from partner. Check network or permissions.");
-      }
-      if (partnerVideoRef.current) {
-        partnerVideoRef.current.srcObject = remoteStream;
-        partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Remote video play error:`, err));
-        console.log(`${new Date().toLocaleTimeString()} - Remote stream set to partnerVideoRef`);
-      }
-      setPeerConnected(true);
-    });
-
-    peer.on("connect", () => {
-      console.log(`${new Date().toLocaleTimeString()} - Initiator peer connected`);
-    });
-
-    peer.on("iceconnectionstatechange", () => {
-      console.log(`${new Date().toLocaleTimeString()} - ICE connection state:`, peer.iceConnectionState);
-      setIceConnectionState(peer.iceConnectionState);
-      if (peer.iceConnectionState === "failed" || peer.iceConnectionState === "disconnected") {
-        console.error(`${new Date().toLocaleTimeString()} - ICE connection failed, attempting reconnection`);
-        setMediaStatus("WebRTC connection failed. Attempting to reconnect...");
-        cleanup();
-        setTimeout(() => {
-          if (streamRef.current) initiatePeerConnection(streamRef.current);
-        }, 2000);
-      } else if (peer.iceConnectionState === "connected") {
-        setMediaStatus("Connected to peer");
-      }
-    });
-
-    peer.on("error", (err) => {
-      console.error(`${new Date().toLocaleTimeString()} - Initiator peer error:`, err);
-      setMediaStatus(`Peer error: ${err.message || "Unknown error"}`);
-      cleanup();
-    });
-
-    peer.on("close", () => {
-      console.log(`${new Date().toLocaleTimeString()} - Initiator peer closed`);
-      cleanup();
-    });
-  };
-
-  useEffect(() => {
-    if (receivingCall && !callAccepted && callerSignal) {
-      if (!wsConnected) {
-        setMediaStatus("Cannot answer call: Signaling server not connected.");
-        return;
-      }
-
-      console.log(`${new Date().toLocaleTimeString()} - Answering incoming call`);
-      navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((currentStream) => {
-        setStream(currentStream);
-        streamRef.current = currentStream;
-        if (userVideoRef.current) {
-          userVideoRef.current.srcObject = currentStream;
-          userVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Local video play error:`, err));
-          console.log(`${new Date().toLocaleTimeString()} - Local stream set with tracks:`, currentStream.getTracks());
-        }
-
-        const peer = new Peer({
-          initiator: false,
-          trickle: true,
-          stream: currentStream,
-          config: {
-            iceServers: [
-              { urls: "stun:stun.l.google.com:19302" },
-              {
-                urls: "turn:openrelay.metered.ca:80",
-                username: "openrelayproject",
-                credential: "openrelayproject",
-              },
-              {
-                urls: "turn:openrelay.metered.ca:443",
-                username: "openrelayproject",
-                credential: "openrelayproject",
-              },
-            ],
-          },
-        });
-        peerRef.current = peer;
-
-        peer.on("signal", (signal) => {
-          const signalKey = JSON.stringify(signal);
-          if (signalSentRef.current.has(signalKey)) return;
-          signalSentRef.current.add(signalKey);
-          console.log(`${new Date().toLocaleTimeString()} - Answerer signaling SDP answer:`, signal);
-          if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-            socketRef.current.send(JSON.stringify({ type: "acceptCall", signal }));
-            console.log(`${new Date().toLocaleTimeString()} - Sent acceptCall message with SDP answer`);
-          } else {
-            console.error(`${new Date().toLocaleTimeString()} - Cannot send answer signal: WebSocket not open`);
-            setMediaStatus("Failed to send call answer: Signaling server disconnected.");
-            cleanup();
-          }
-        });
-
-        peer.on("icecandidate", (event) => {
-          if (event.candidate) {
-            console.log(`${new Date().toLocaleTimeString()} - Answerer ICE candidate:`, event.candidate);
-            if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-              socketRef.current.send(JSON.stringify({ type: "ice-candidate", candidate: event.candidate }));
+    // Effect for Socket Connection, Media, and Initial Event Listeners
+    useEffect(() => {
+        if (!nameConfirmed) {
+            // If user goes back to name screen, ensure any existing socket is disconnected
+            if (socket) {
+                console.log("[Video.jsx] Name not confirmed, disconnecting existing socket.");
+                socket.disconnect();
+                setSocket(null);
             }
-          }
-        });
+            return;
+        }
 
-        peer.on("stream", (remoteStream) => {
-          console.log(`${new Date().toLocaleTimeString()} - Answerer received remote stream with tracks:`, remoteStream.getTracks());
-          if (remoteStream.getVideoTracks().length === 0) {
-            console.error(`${new Date().toLocaleTimeString()} - No video tracks in remote stream. Check network or permissions.`);
-            setMediaStatus("No video from partner. Check network or permissions.");
-          }
-          if (partnerVideoRef.current) {
-            partnerVideoRef.current.srcObject = remoteStream;
-            partnerVideoRef.current.play().catch((err) => console.error(`${new Date().toLocaleTimeString()} - Remote video play error:`, err));
-            console.log(`${new Date().toLocaleTimeString()} - Remote stream set to partnerVideoRef`);
-          }
-          setPeerConnected(true);
-        });
+        // Only create a new socket if one doesn't exist
+        if (!socket) {
+            console.log("[Video.jsx] Name confirmed. Establishing new Socket.IO connection...");
+            setIsConnectingSocket(true);
+            setCallStatus("Connecting to signaling server...");
 
-        peer.on("connect", () => {
-          console.log(`${new Date().toLocaleTimeString()} - Answerer peer connected`);
-        });
+            const newSocketInstance = io("ws://localhost:8080", {
+                transports: ['websocket'],
+                reconnectionAttempts: 3, // Or your preferred setting
+            });
 
-        peer.on("iceconnectionstatechange", () => {
-          console.log(`${new Date().toLocaleTimeString()} - ICE connection state:`, peer.iceConnectionState);
-          setIceConnectionState(peer.iceConnectionState);
-          if (peer.iceConnectionState === "failed" || peer.iceConnectionState === "disconnected") {
-            console.error(`${new Date().toLocaleTimeString()} - ICE connection failed, attempting reconnection`);
-            setMediaStatus("WebRTC connection failed. Attempting to reconnect...");
-            cleanup();
-            setTimeout(() => {
-              if (streamRef.current) initiatePeerConnection(streamRef.current);
-            }, 2000);
-          } else if (peer.iceConnectionState === "connected") {
-            setMediaStatus("Connected to peer");
-          }
-        });
+            newSocketInstance.on('connect', () => {
+                setIsConnectingSocket(false);
+                console.log("[Video.jsx] Socket connected:", newSocketInstance.id);
+                setMySockID(newSocketInstance.id);
+                setCallStatus("Socket connected. Registering...");
+                newSocketInstance.emit('register', { name: name }); // Use the confirmed 'name'
+                setError('');
+            });
 
-        peer.on("error", (err) => {
-          console.error(`${new Date().toLocaleTimeString()} - Answerer peer error:`, err);
-          setMediaStatus(`Peer error: ${err.message || "Unknown error"}`);
-          cleanup();
-        });
+            newSocketInstance.on('connect_error', (err) => {
+                setIsConnectingSocket(false);
+                console.error("[Video.jsx] Socket connect_error:", err);
+                setError(`Signaling server connection failed: ${err.message}. Is server on port 8080?`);
+                setCallStatus("Connection Error");
+            });
 
-        peer.on("close", () => {
-          console.log(`${new Date().toLocaleTimeString()} - Answerer peer closed`);
-          cleanup();
-        });
+            newSocketInstance.on('disconnect', (reason) => {
+                setIsConnectingSocket(false);
+                console.log("[Video.jsx] Socket disconnected:", reason);
+                setCallStatus(`Signaling server disconnected: ${reason}`);
+                if (peer) peer.destroy();
+                setPeer(null); setCallActive(false); 
+                // Don't reset partner here, as it might be a temporary disconnect.
+                // Partner leaving should be handled by 'chatEnded' or 'partner-left-video'
+            });
 
-        console.log(`${new Date().toLocaleTimeString()} - Signaling caller offer to peer`);
-        peer.signal(callerSignal);
-        setCallAccepted(true);
-        setCallStarted(true);
-      }).catch((error) => {
-        console.error(`${new Date().toLocaleTimeString()} - Answerer getUserMedia error:`, error);
-        setMediaStatus(`Error accessing media: ${error.message}. Check camera/mic permissions.`);
-        cleanup();
-      });
-    }
-  }, [receivingCall, callerSignal, wsConnected]);
-
-  const endCall = () => {
-    console.log(`${new Date().toLocaleTimeString()} - endCall: Ending call`);
-    cleanup();
-  };
-
-  const handleSkip = () => {
-    console.log(`${new Date().toLocaleTimeString()} - handleSkip: Skipping to next call`);
-    cleanup();
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: "skip" }));
-    }
-    setTimeout(() => startVideoCall(), 1000);
-  };
-
-  const sendEmoji = (emoji) => {
-    alert(`Sent emoji: ${emoji}`);
-  };
-
-  const toggleMute = () => {
-    if (streamRef.current && streamRef.current.getAudioTracks()) {
-      streamRef.current.getAudioTracks().forEach((track) => (track.enabled = !muted));
-      setMuted(!muted);
-      console.log(`${new Date().toLocaleTimeString()} - toggleMute: Audio ${!muted ? "muted" : "unmuted"}`);
-    }
-  };
-
-  const toggleVideo = () => {
-    if (streamRef.current && streamRef.current.getVideoTracks()) {
-      streamRef.current.getVideoTracks().forEach((track) => (track.enabled = !videoEnabled));
-      setVideoEnabled(!videoEnabled);
-      console.log(`${new Date().toLocaleTimeString()} - toggleVideo: Video ${!videoEnabled ? "disabled" : "enabled"}`);
-    }
-  };
-
-  const sendChatMessage = (text) => {
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: "chat", text }));
-      setChatMessages((prev) => [...prev, { sender: username, text }]);
-      console.log(`${new Date().toLocaleTimeString()} - Sent chat message:`, text);
-    }
-  };
-
-  return (
-    <div
-      style={{
-        backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa",
-        color: theme === "dark" ? "#ffffff" : "#333333",
-        minHeight: "100vh",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        flexDirection: "column",
-        padding: "20px",
-        position: "relative",
-      }}
-    >
-      {!nameConfirmed ? (
-        <div
-          style={{
-            backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
-            padding: "25px",
-            borderRadius: "10px",
-            textAlign: "center",
-            width: "400px",
-            boxShadow: theme === "dark" ? "0px 4px 10px rgba(255, 255, 255, 0.2)" : "0px 4px 10px rgba(0, 0, 0, 0.2)",
-          }}
-        >
-          <h2 style={{ color: theme === "dark" ? "#ffffff" : "#222222" }}>Anonymous Video Call</h2>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Choose a name"
-            style={inputStyle(theme)}
-          />
-          <button onClick={handleNameConfirm} style={startButtonStyle}>
-            Start Video
-          </button>
-        </div>
-      ) : !callStarted ? (
-        <div style={{ textAlign: "center" }}>
-          <h2>Anonymous Video Call</h2>
-          <p>Status: {mediaStatus}</p>
-          <button onClick={startVideoCall} style={startButtonStyle} disabled={!wsConnected}>
-            Start Video Call
-          </button>
-          {showRetry && (
-            <button onClick={handleRetry} style={startButtonStyle} disabled={wsConnected}>
-              Retry Connection
-            </button>
-          )}
-        </div>
-      ) : (
-        <div style={{ textAlign: "center" }}>
-          <h2>Anonymous Video Call</h2>
-          <p>Status: {mediaStatus}</p>
-          <p>ICE Connection: {iceConnectionState}</p>
-          <div style={videoContainerStyle}>
-            <div>
-              <p>You</p>
-              <video ref={userVideoRef} autoPlay muted playsInline style={videoStyle} />
-            </div>
-            <div>
-              <p>Stranger</p>
-              <video ref={partnerVideoRef} autoPlay playsInline style={videoStyle} placeholder="Waiting for Stranger Video" />
-            </div>
-          </div>
-          <div style={{ marginTop: "20px", maxWidth: "600px" }}>
-            <h3>Chat</h3>
-            <div style={{ maxHeight: "200px", overflowY: "auto", border: "1px solid #ccc", padding: "10px" }}>
-              {chatMessages.map((msg, index) => (
-                <p key={index}>
-                  <strong>{msg.sender}:</strong> {msg.text}
-                </p>
-              ))}
-            </div>
-            <input
-              type="text"
-              placeholder="Type a message..."
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && e.target.value.trim()) {
-                  sendChatMessage(e.target.value);
-                  e.target.value = "";
+            newSocketInstance.on('userID', (data) => {
+                if (data.userID === newSocketInstance.id) {
+                    console.log("[Video.jsx] Registered with server. UserID (mySockID):", newSocketInstance.id, "Name:", name);
+                    setCallStatus("Registered. Getting media & waiting for partner...");
+                    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+                        .then(currentStream => {
+                            setLocalStream(currentStream);
+                            if (myVideoRef.current) {
+                                myVideoRef.current.srcObject = currentStream;
+                                myVideoRef.current.play().catch(e => console.warn("[Video.jsx] Error playing myVideo:", e));
+                            }
+                        })
+                        .catch(err => {
+                            console.error("[Video.jsx] Failed to get user media:", err);
+                            setError("Could not access camera/microphone. Check permissions and reload.");
+                            setCallStatus("Media access failed.");
+                        });
                 }
-              }}
-              style={inputStyle(theme)}
-            />
-          </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: "15px", marginTop: "20px" }}>
-            <button onClick={toggleMute} style={emojiButtonStyle}>
-              <span className="material-icons">{muted ? "mic_off" : "mic"}</span>
-            </button>
-            <button onClick={toggleVideo} style={emojiButtonStyle}>
-              <span className="material-icons">{videoEnabled ? "videocam" : "videocam_off"}</span>
-            </button>
-            <button onClick={endCall} style={endButtonStyle}>
-              <span className="material-icons">call_end</span>
-            </button>
-          </div>
-          <div style={{ marginTop: "10px" }}>
-            <button onClick={handleSkip} style={skipButtonStyle} disabled={!wsConnected}>
-              Skip to Next
-            </button>
-          </div>
+            });
+            
+            newSocketInstance.on('partnerConnected', (data) => {
+                if (mySockID && data.partnerID !== mySockID) {
+                    console.log(`[Video.jsx] Partner connected: ${data.partnerName} (${data.partnerID}). My ID: ${mySockID}`);
+                    setPartner({ id: data.partnerID, name: data.partnerName });
+                    if (initialIsInitiator === undefined) {
+                        const amIInitiator = mySockID < data.partnerID;
+                        setIsInitiator(amIInitiator);
+                        setCallStatus(amIInitiator ? `Paired. Initiating video call to ${data.partnerName}...` : `Paired. Waiting for call from ${data.partnerName}...`);
+                    } else {
+                         setIsInitiator(initialIsInitiator);
+                         setCallStatus(initialIsInitiator ? `Paired. Initiating video call to ${data.partnerName}...` : `Paired. Waiting for call from ${data.partnerName}...`);
+                    }
+                }
+            });
+            
+            newSocketInstance.on('chatEnded', () => { // General event if partner leaves pairing pool
+                setCallStatus("Partner has left or pairing ended. Call cannot proceed.");
+                if(peer) peer.destroy();
+                setPeer(null); setCallActive(false); setPartner({ id: null, name: null });
+            });
+            
+            setSocket(newSocketInstance); // Store the new socket instance in state
+
+            return () => {
+                console.log("[Video.jsx] Cleanup: Disconnecting socket instance", newSocketInstance.id);
+                newSocketInstance.disconnect();
+            };
+        } else if (socket && socket.disconnected && nameConfirmed) {
+            // If socket exists but is disconnected, and we intend to be connected
+            console.log("[Video.jsx] Socket exists but disconnected, attempting to reconnect.");
+            socket.connect();
+            setIsConnectingSocket(true);
+            setCallStatus("Reconnecting to signaling server...");
+        }
+
+    }, [nameConfirmed, name, initialIsInitiator]); // Removed `socket` and `mySockID` from direct dependencies to manage lifecycle internally.
+
+
+    // Effect for Initializing Peer Connection & Peer-related Socket Listeners
+    useEffect(() => {
+        // Guard conditions: ensure all necessary pieces are ready and no peer already exists
+        if (!socket || !socket.connected || !localStream || !partner.id || !mySockID || peer) {
+            if (peer && (!socket || !socket.connected || !localStream || !partner.id || !mySockID)) {
+                 // If dependencies become invalid while a peer exists, destroy the peer.
+                console.log("[Video.jsx] Peer exists but dependencies are invalid. Destroying peer.");
+                peer.destroy();
+                setPeer(null);
+            }
+            return; 
+        }
+        
+        // Determine if this client should initiate the call for this pairing
+        // This could also be passed via navigation state if Chat.jsx determines the initiator
+        const shouldThisClientInitiate = initialIsInitiator !== undefined ? initialIsInitiator : (mySockID < partner.id);
+        setIsInitiator(shouldThisClientInitiate); // Update state if determined here
+        console.log(`[Video.jsx] Initiator status for this pairing: ${shouldThisClientInitiate}`);
+
+        if (shouldThisClientInitiate) {
+            console.log(`[Video.jsx] INITIATOR: About to create Peer. MySockID: ${mySockID}, PartnerID: ${partner.id}`);
+            const newPeerInstance = createPeerInstance(true); // True for initiator
+            if (newPeerInstance) setPeer(newPeerInstance);
+        }
+        // If not initiator, peer creation is triggered by 'call-user' (offer received)
+        
+        const handleCallUser = (data) => { // Offer from partner
+            if (data.from === partner.id && !shouldThisClientInitiate) { // Ensure this client is the intended callee
+                console.log("[Video.jsx] RECEIVER: Received 'call-user' (offer) from:", data.from);
+                if (peer) { // If a peer somehow exists (e.g. from a race condition), destroy it
+                    console.warn("[Video.jsx] Receiver already had a peer, destroying it before accepting new call.");
+                    peer.destroy();
+                }
+                const receivingPeer = createPeerInstance(false); // Create peer as receiver
+                if(receivingPeer) { 
+                    receivingPeer.signal(data.signal); // Process the offer
+                    setPeer(receivingPeer);
+                }
+            }
+        };
+        const handleCallAccepted = (data) => { // Answer from partner
+            if (data.from === partner.id && shouldThisClientInitiate && peer) {
+                console.log("[Video.jsx] INITIATOR: Received 'call-accepted' (answer) from:", data.from);
+                peer.signal(data.signal); 
+            }
+        };
+        const handleIceCandidate = (data) => { // ICE from partner
+            if (data.from === partner.id && peer && data.candidate) {
+                console.log("[Video.jsx] Received 'ice-candidate' from:", data.from);
+                peer.signal({ candidate: data.candidate });
+            }
+        };
+        const handlePartnerLeftVideo = () => { // Custom event from server
+            console.log("[Video.jsx] Partner signaled they left the video call.");
+            setCallStatus("Partner has ended the call.");
+            if (peer) peer.destroy(); 
+            setPeer(null); setCallActive(false);
+        };
+
+        socket.on("call-user", handleCallUser);
+        socket.on("call-accepted", handleCallAccepted);
+        socket.on("ice-candidate", handleIceCandidate);
+        socket.on("partner-left-video", handlePartnerLeftVideo);
+
+        return () => {
+            console.log("[Video.jsx] Cleaning up peer-related socket listeners.");
+            socket.off("call-user", handleCallUser);
+            socket.off("call-accepted", handleCallAccepted);
+            socket.off("ice-candidate", handleIceCandidate);
+            socket.off("partner-left-video", handlePartnerLeftVideo);
+            // The peer instance itself is destroyed in its own event handlers ('close', 'error') or by endCall/skipCall
+        };
+    }, [socket, localStream, partner.id, mySockID, initialIsInitiator]); // Removed 'isInitiator' and 'peer' state from deps to avoid loops on their set
+
+    const createPeerInstance = (amInitiator) => {
+        if (!localStream) { setError("Local media stream not found for peer creation."); return null; }
+        console.log(`[Video.jsx] createPeerInstance. Initiator: ${amInitiator}, MySockID: ${mySockID}, PartnerID: ${partner.id}`);
+        
+        const newPeer = new Peer({ 
+            initiator: amInitiator, 
+            trickle: true, 
+            stream: localStream,
+            config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] }
+        });
+
+        newPeer.on("signal", (data) => {
+            if (!socket || !partner.id || !mySockID) { console.warn("Cannot send signal, missing socket/partner/myID"); return; }
+            console.log(`[Video.jsx] Peer (${amInitiator ? 'I' : 'R'}) 'signal'. Type:`, data.type || (data.candidate ? 'candidate' : 'unknown'));
+            
+            if (data.type === 'offer') socket.emit("callUser", { signalData: data, to: partner.id, from: mySockID });
+            else if (data.type === 'answer') socket.emit("acceptCall", { signalData: data, to: partner.id, from: mySockID });
+            else if (data.candidate) socket.emit("ice-candidate", { candidate: data.candidate, to: partner.id, from: mySockID });
+        });
+        newPeer.on("stream", (remoteStream) => {
+            if (partnerVideoRef.current) {
+                partnerVideoRef.current.srcObject = remoteStream;
+                partnerVideoRef.current.play().catch(e => console.warn("[Video.jsx] Error playing partner video:", e));
+            }
+            setCallStatus(`Connected with ${partner.name || 'Partner'}`);
+            setCallActive(true); setError(''); 
+        });
+        newPeer.on("connect", () => {setCallActive(true); setError(''); console.log("[Video.jsx] Peer 'connect' (data channel).");});
+        newPeer.on("iceStateChange", (iceState) => { 
+            console.log(`[Video.jsx] Peer (${amInitiator ? 'I' : 'R'}) ICE state:`, iceState);
+            if(iceState === "connected" || iceState === "completed") {setCallStatus(`Video stream active`); setCallActive(true); setError('');}
+            else if (iceState === "failed") { setError("ICE Connection failed. Video may not work."); setCallStatus("Connection failed"); setCallActive(false); }
+            else if (iceState === "disconnected" || iceState === "closed") { setCallStatus("Video connection lost or closed."); setCallActive(false); }
+        });
+        newPeer.on("close", () => { console.log(`[Video.jsx] Peer (${amInitiator ? 'I' : 'R'}) 'close'.`); setCallStatus("Call ended."); setCallActive(false); setPeer(null); }); // Nullify peer state
+        newPeer.on("error", (err) => { 
+            console.error(`[Video.jsx] Peer (${amInitiator ? 'I' : 'R'}) error:`, err); 
+            setError(`WebRTC Error: ${err.message}.`); 
+            setCallStatus("Call Failed"); 
+            setCallActive(false); 
+            if(newPeer && !newPeer.destroyed) newPeer.destroy();
+            setPeer(null); // Nullify peer state
+        });
+        return newPeer;
+    };
+
+    const endCall = () => { /* ... Same ... */ 
+        if (socket && partner.id && mySockID) socket.emit("video-call-ended", { to: partner.id, from: mySockID });
+        if (peer) { peer.destroy(); setPeer(null); } 
+        if (localStream) localStream.getTracks().forEach(track => track.stop());
+        setCallStatus("Call ended by you."); setCallActive(false);
+        navigate("/"); 
+    };
+    const skipCall = () => { endCall(); };
+    const toggleMute = () => { /* ... same ... */ 
+        if (localStream) {
+            const audioTrack = localStream.getAudioTracks()[0];
+            if (audioTrack) { audioTrack.enabled = !audioTrack.enabled; setIsMuted(!audioTrack.enabled); }
+        }
+    };
+    const toggleVideo = () => { /* ... same ... */
+        if (localStream) {
+            const videoTrack = localStream.getVideoTracks()[0];
+            if (videoTrack) { videoTrack.enabled = !videoTrack.enabled; setIsVideoEnabled(videoTrack.enabled); }
+        }
+    };
+    
+    useEffect(() => { if (!nameConfirmed && nameInputRef.current) nameInputRef.current.focus(); }, [nameConfirmed]);
+
+    const videoBaseStyle = { /* ... same ... */ 
+        width: "clamp(280px, 40vw, 550px)", aspectRatio: "4/3",
+        backgroundColor: theme === "dark" ? "#111" : "#222", borderRadius: "12px",
+        margin: "10px", objectFit: "cover",
+        border: `2px solid ${theme === "dark" ? "#555" : "#ddd"}`,
+        boxShadow: "0 5px 15px rgba(0,0,0,0.2)"
+    };
+    const myVideoStyle = { ...videoBaseStyle, transform: 'scaleX(-1)' };
+    const partnerVideoStyle = { ...videoBaseStyle };
+
+    if (!nameConfirmed) { /* ... Name input form JSX - fixed div in p for status ... */ 
+        return (
+            <div className={`d-flex align-items-center justify-content-center vh-100 ${theme === 'dark' ? 'bg-dark text-light' : 'bg-light text-dark'}`}>
+                <Container>
+                    <Row className="justify-content-center">
+                        <Col md={6} lg={4} className="text-center">
+                            <h2 className="mb-3">Enter Name for Video Chat</h2>
+                            <Form onSubmit={handleNameConfirm}>
+                                <Form.Group className="mb-3">
+                                    <Form.Control ref={nameInputRef} type="text" placeholder="Your Name" value={name} onChange={(e) => setName(e.target.value)} autoFocus className={theme === 'dark' ? 'form-control-dark' : ''} />
+                                </Form.Group>
+                                <Button variant="primary" type="submit" disabled={!name.trim() || isConnectingSocket}>
+                                    {isConnectingSocket ? <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-1"/> : null}
+                                    Start Video Session
+                                </Button>
+                            </Form>
+                            {error && <Alert variant="danger" className="mt-3">{error}</Alert>}
+                            {callStatus && !error && 
+                                <div className={`mt-3 text-muted ${theme === 'dark' ? 'text-light-emphasis' : ''}`}> {/* Changed p to div */}
+                                    {(callStatus.includes("Connecting") || callStatus.includes("Initializing") || callStatus.includes("Registering")) && isConnectingSocket && <Spinner size="sm" className="me-1"/>}
+                                    {callStatus}
+                                </div>
+                            }
+                        </Col>
+                    </Row>
+                </Container>
+            </div>
+        );
+    }
+
+    // Main Video Call UI
+    return ( /* ... Main Video Call UI JSX ... */ 
+        <div className={`d-flex flex-column align-items-center justify-content-start ${theme === "dark" ? "theme-dark" : ""}`} style={{ minHeight: "100vh", backgroundColor: theme === "dark" ? "#181a1b" : "#f8f9fa", color: theme === "dark" ? "#e0e0e0" : "#212529", padding: '20px 0', boxSizing: 'border-box' }}>
+            <Container fluid="lg">
+                <Row className="justify-content-center text-center mb-2">
+                    <Col>
+                        <h3 className="mt-3 mb-1">Video Call {partner.name && callActive ? `with ${partner.name}` : (partner.name ? `with ${partner.name}`: "")}</h3>
+                        <p className={`mb-2 ${theme === 'dark' ? 'text-white-50' : 'text-muted'}`}>{callStatus}</p>
+                        {error && <Alert variant="danger" size="sm" className="py-1 px-2 d-inline-block">{error}</Alert>}
+                    </Col>
+                </Row>
+
+                {!localStream && !error && nameConfirmed && (
+                    <div className="text-center my-5">
+                        <Spinner animation="border" variant={theme === 'dark' ? 'light' : 'primary'}/>
+                        <p className="mt-2">Initializing camera & microphone...</p>
+                    </div>
+                )}
+
+                {localStream && (
+                     <Row className="justify-content-center align-items-center gx-3 gy-3 mb-3">
+                        <Col xs={12} md={6} className="d-flex flex-column align-items-center">
+                            <video ref={myVideoRef} autoPlay muted playsInline style={myVideoStyle} />
+                            <p className="mt-1 mb-0 small">{name || "You"}</p>
+                        </Col>
+                        <Col xs={12} md={6} className="d-flex flex-column align-items-center">
+                            {callActive && peer ? (
+                                <video ref={partnerVideoRef} autoPlay playsInline style={partnerVideoStyle} />
+                            ) : (
+                                <div style={{...partnerVideoStyle, display:'flex', alignItems:'center', justifyContent:'center', backgroundColor: theme === 'dark' ? '#2a2a2a' : '#e9ecef'}} className="text-muted">
+                                    {isConnectingSocket || callStatus.includes("Calling") || callStatus.includes("Waiting") ? <Spinner animation="border" size="sm"/> : <span>Partner's Video</span>}
+                                </div>
+                            )}
+                            <p className="mt-1 mb-0 small">{partner.name || "Partner"}</p>
+                        </Col>
+                    </Row>
+                )}
+
+                {localStream && nameConfirmed && (
+                    <Row className="justify-content-center">
+                        <Col xs="auto" className="controls d-flex justify-content-center align-items-center gap-2 flex-wrap p-3 rounded" style={{backgroundColor: theme === 'dark' ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.3)'}}>
+                            <Button variant={isMuted ? "outline-secondary" : "outline-primary"} onClick={toggleMute} title={isMuted ? "Unmute" : "Mute"} size="lg" className="rounded-circle p-3 lh-1">
+                                {isMuted ? <FaMicrophoneSlash size="1.2em"/> : <FaMicrophone size="1.2em"/>}
+                            </Button>
+                            <Button variant={!isVideoEnabled ? "outline-secondary" : "outline-primary"} onClick={toggleVideo} title={!isVideoEnabled ? "Enable Video" : "Disable Video"}  size="lg" className="rounded-circle p-3 lh-1">
+                                {!isVideoEnabled ? <FaVideoSlash size="1.2em"/> : <FaVideoIcon size="1.2em"/>}
+                            </Button>
+                            <Button variant="danger" onClick={endCall} title="End Call"  size="lg" className="rounded-circle p-3 lh-1">
+                                <FaPhoneSlash size="1.2em"/>
+                            </Button>
+                            <Button variant="outline-warning" onClick={skipCall} title="Skip/End Call"  size="lg" className="rounded-circle p-3 lh-1">
+                                <FaRedo size="1.2em"/>
+                            </Button>
+                        </Col>
+                    </Row>
+                )}
+                 {nameConfirmed && !callActive && !isConnectingSocket && localStream && (
+                     <Button className="mt-4" variant="outline-secondary" onClick={() => navigate("/")}>Back to Home</Button>
+                 )}
+            </Container>
         </div>
-      )}
-      <div
-        style={{
-          position: "absolute",
-          bottom: "20px",
-          right: "20px",
-          width: "50px",
-          height: "50px",
-          cursor: "pointer",
-        }}
-      >
-        <img src="/msg.png" alt="Message" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-      </div>
-    </div>
-  );
+    );
 };
-
-const videoStyle = {
-  width: "600px",
-  height: "400px",
-  backgroundColor: "#000",
-  borderRadius: "10px",
-};
-
-const videoContainerStyle = {
-  display: "flex",
-  gap: "20px",
-  marginTop: "20px",
-  justifyContent: "center",
-};
-
-const emojiButtonStyle = {
-  width: "80px",
-  height: "80px",
-  fontSize: "40px",
-  backgroundColor: "#007bff",
-  color: "#fff",
-  border: "none",
-  borderRadius: "50%",
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-};
-
-const endButtonStyle = { ...emojiButtonStyle, backgroundColor: "red" };
-const skipButtonStyle = {
-  padding: "12px 24px",
-  backgroundColor: "#6c757d",
-  color: "#fff",
-  border: "none",
-  borderRadius: "5px",
-  cursor: "pointer",
-  fontSize: "18px",
-  marginTop: "10px",
-};
-const startButtonStyle = {
-  width: "100%",
-  padding: "12px",
-  backgroundColor: "#198754",
-  color: "#fff",
-  border: "none",
-  borderRadius: "5px",
-  cursor: "pointer",
-  fontSize: "16px",
-  marginTop: "10px",
-};
-const inputStyle = (theme) => ({
-  width: "100%",
-  padding: "12px",
-  borderRadius: "5px",
-  border: "1px solid #ccc",
-  fontSize: "16px",
-  textAlign: "left",
-  outline: "none",
-  backgroundColor: theme === "dark" ? "#333" : "#fff",
-  color: theme === "dark" ? "#ffffff" : "#222",
-});
 
 export default Video;

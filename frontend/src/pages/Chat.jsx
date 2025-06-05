@@ -1,723 +1,439 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
-import { Container, Row, Col, Button, Form, InputGroup, Spinner } from "react-bootstrap";
-import { FaPaperPlane, FaVideo } from "react-icons/fa";
+import { Container, Row, Col, Button, Form, InputGroup, Spinner, Alert } from "react-bootstrap";
+import { FaPaperPlane, FaVideo, FaSignOutAlt, FaRedo } from "react-icons/fa";
 import { ThemeContext } from "../components/ThemeContext";
 import CryptoJS from 'crypto-js';
+import { useNavigate } from 'react-router-dom';
+import io from 'socket.io-client';
 
-// --- Helper Function for Timestamp Logging ---
-const logTimestamp = (label, ts) => {
-    if (ts && typeof ts === 'number') {
-        // console.log(`[Timestamp Log] ${label}: ${ts} (${new Date(ts).toISOString()})`);
-    } else {
-        console.warn(`[Timestamp Log] ${label}: Invalid or missing timestamp (${ts})`);
-    }
+const systemMessageCounter = { current: 0 };
+const generateSystemMessageId = () => {
+    systemMessageCounter.current += 1;
+    return `sys-${Date.now()}-${systemMessageCounter.current}`;
 };
 
-// --- Client-Side Censoring Logic ---
-const badWordsClient = [ // Keep this reasonably in sync with the server list
-    "damn", "hell", "shit", "fuck", "fuk", "bitch", "asshole", "cunt",
-    "dick", "pussy", "slut", "whore", "nigger", "nigga", "ass" // Added 'ass'
-];
+const badWordsClient = ["damn", "hell", "shit", "fuck", "fuk", "bitch", "asshole", "cunt", "dick", "pussy", "slut", "whore", "nigger", "nigga", "ass"];
 const badWordClientRegex = new RegExp(`\\b(${badWordsClient.join('|')})\\b`, 'gi');
 
-function censorClientMessage(text) {
+function censorClientMessageText(text) {
     if (!text || typeof text !== 'string') return text;
-    // Reset lastIndex for global regex
     badWordClientRegex.lastIndex = 0;
     return text.replace(badWordClientRegex, (match) => '*'.repeat(match.length));
 }
-// --- End Censoring Logic ---
 
 const Chat = () => {
+    const navigate = useNavigate();
     const { theme, selfDestructEnabled, destructTime, customTime } = useContext(ThemeContext);
-    // console.log(`[Chat Render] Context: Enabled=${selfDestructEnabled}, Time=${destructTime}, Custom=${customTime}`);
 
-    const [name, setName] = useState("");
-    const [sessionID] = useState(() => Math.random().toString(36).substring(2));
+    const [nameForEntry, setNameForEntry] = useState(localStorage.getItem('chatUsername') || "");
+    const [registeredName, setRegisteredName] = useState('');
     const [chatStarted, setChatStarted] = useState(false);
+
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState("");
-    const [userMap, setUserMap] = useState({}); // Maps userID to username
-    const [status, setStatus] = useState("Connecting you with a partner...");
+    const [userMap, setUserMap] = useState({});
+    const [status, setStatus] = useState("Enter nickname to start.");
     const [isConnecting, setIsConnecting] = useState(false);
-    // Mute state removed as per requirement
-    const [pendingMessages, setPendingMessages] = useState([]); // Queue for messages awaiting key
-    const userIDRef = useRef(null);
+    const [error, setError] = useState('');
+    
+    const [socket, setSocket] = useState(null);
+    const [currentUserID, setCurrentUserID] = useState(null);
+    const [currentEncryptionKey, setCurrentEncryptionKey] = useState(null);
+    const [pendingMessages, setPendingMessages] = useState([]);
+
     const chatContainerRef = useRef(null);
-    const socketRef = useRef(null);
-    const reconnectTimeoutRef = useRef(null);
-    const encryptionKeyRef = useRef(null); // Stores the 64-char hex key
-    const intervalIdRef = useRef(null); // For self-destruct interval
+    const nameInputRef = useRef(null);
+    const messageInputRef = useRef(null);
+    const intervalIdRef = useRef(null);
 
-    // --- Debug Effect for destructTime Changes ---
     useEffect(() => {
-        // console.log(`[Chat Context Debug] destructTime changed to: ${destructTime}`);
-        if (selfDestructEnabled && chatStarted) {
-            // console.log(`[Chat Context Debug] Running immediate cleanup due to destructTime change: ${destructTime}`);
-            setMessages(currentMessages => cleanupOldMessages(currentMessages, destructTime, customTime));
+        if (!chatStarted) {
+            if (socket) { socket.disconnect(); setSocket(null); }
+            setStatus("Enter nickname to start."); return;
         }
-    }, [destructTime, selfDestructEnabled, chatStarted, customTime]);
-
-    // --- Effects (WebSocket, Scroll) ---
-    useEffect(() => {
-        // console.log("[Effect Main] Running. chatStarted:", chatStarted);
-        if (chatStarted) {
-            connectWebSocket();
-        }
-        // Cleanup function
+        setIsConnecting(true); setStatus("Connecting to chat server...");
+        const backendUrl = 'ws://localhost:8080';
+        const newSocket = io(backendUrl, { reconnectionAttempts: 3, transports: ['websocket'] });
+        setSocket(newSocket);
         return () => {
-            // console.log("[Effect Main] Cleanup: Disconnecting WS & clearing interval ref:", intervalIdRef.current);
-            disconnectWebSocket();
-            if (intervalIdRef.current) {
-                clearInterval(intervalIdRef.current);
-                intervalIdRef.current = null;
-                // console.log("[Effect Main Cleanup] Cleared self-destruct interval.");
-            }
+            if (newSocket) newSocket.disconnect();
+            if (intervalIdRef.current) clearInterval(intervalIdRef.current);
         };
-    }, [chatStarted]); // Re-run only if chatStarted changes
+    }, [chatStarted]);
+
+    useEffect(() => { if (!chatStarted && nameInputRef.current) nameInputRef.current.focus(); }, [chatStarted]);
+    
+    useEffect(() => {
+        const partnerId = Object.keys(userMap).find(id => id !== currentUserID && id !== 'system');
+        if (chatStarted && currentUserID && currentEncryptionKey && partnerId && messageInputRef.current) {
+            messageInputRef.current.focus();
+        }
+    }, [chatStarted, currentUserID, currentEncryptionKey, userMap]);
 
     useEffect(() => {
-        // Auto-scroll to bottom
-        if (chatContainerRef.current) {
-            chatContainerRef.current.scrollTo({ top: chatContainerRef.current.scrollHeight, behavior: "smooth" });
-        }
-    }, [messages]); // Re-run when messages change
-
-    // --- WebSocket Functions ---
-    const connectWebSocket = () => {
-        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-            console.log("WebSocket already connected.");
-            return;
-        }
-        if (isConnecting) {
-            console.log("WebSocket connection attempt already in progress.");
-            return;
-        }
-
-        setStatus("Connecting to chat server...");
-        setIsConnecting(true);
-        // Use wss://textanon.onrender.com for production, or ws://localhost:8080 for local testing
-        const wsUrl = "wss://textanon.onrender.com"
-        console.log(`WebSocket connecting to: ${wsUrl}`);
-        socketRef.current = new WebSocket(wsUrl);
-
-        socketRef.current.onopen = () => {
-            console.log("WebSocket onopen: Connected to WebSocket Server");
+        if (!socket) return;
+        const onConnect = () => {
+            setIsConnecting(false); setStatus("Registering...");
+            if (registeredName) socket.emit('register', { name: registeredName });
+        };
+        const onDisconnect = (reason) => {
             setIsConnecting(false);
-            setStatus("Registering with server...");
-            socketRef.current.send(JSON.stringify({
-                type: "register",
-                name,
-                sessionID,
-            }));
-            clearTimeout(reconnectTimeoutRef.current);
+            setStatus(chatStarted ? `Disconnected: ${reason}. Try refreshing.` : "Disconnected.");
+            setCurrentEncryptionKey(null);
+            const selfName = userMap[currentUserID] || registeredName;
+            setUserMap(currentUserID ? { [currentUserID]: selfName } : {});
         };
-
-        socketRef.current.onmessage = async (event) => {
-            try {
-                const received = event.data instanceof Blob
-                    ? JSON.parse(await event.data.text())
-                    : JSON.parse(event.data);
-                handleMessage(received);
-            } catch (err) {
-                console.error("Error parsing WebSocket message:", err, "Data:", event.data);
-                setStatus("Error processing message.");
-            }
+        const onConnectError = (err) => { setIsConnecting(false); setStatus(`Connection failed: ${err.message}`); setError(`Connection error. Server might be down.`);};
+        const onUserID = (data) => {
+            setCurrentUserID(data.userID);
+            setUserMap(prev => ({ ...prev, [data.userID]: registeredName }));
+            setStatus('Registered. Waiting for partner...');
+            setError(''); // Clear previous errors on successful registration
         };
-
-        socketRef.current.onerror = (err) => {
-            console.error("WebSocket onerror: WebSocket error:", err);
-            setIsConnecting(false);
-        };
-
-        socketRef.current.onclose = (event) => {
-            console.log(`WebSocket onclose: WebSocket closed. Code: ${event.code}, Reason: ${event.reason}`);
-            setIsConnecting(false);
-            const wasConnected = !!userIDRef.current; // Check if we were actually connected before closing
-            socketRef.current = null;
-            if (event.code !== 1000 && chatStarted && wasConnected) { // Only auto-reconnect if closed unexpectedly after connection established
-                setStatus("Disconnected. Attempting to reconnect...");
-                reconnectWebSocket();
-            } else if (chatStarted && !wasConnected) { // If closed before fully connecting (e.g., server unavailable)
-                setStatus("Connection failed. Please try again later or check nickname.");
-                // Optionally reset chatStarted to show nickname screen again after a delay
-                // setTimeout(() => setChatStarted(false), 5000);
-            }
-             else {
-                setStatus("Disconnected from chat server.");
+        const onSystemMessage = (message) => {
+            const newMsg = { type: 'system', senderID: 'system', senderName: 'System', text: message.text, id: generateSystemMessageId(), timestamp: Date.now() };
+            setMessages(prev => cleanupOldMessages([...prev, newMsg], selfDestructEnabled, destructTime, customTime));
+            setStatus(message.text); 
+            if (message.text && 
+                (message.text.toLowerCase().includes("finding a new match") || 
+                 message.text.toLowerCase().includes("partner skipped") || 
+                 message.text.toLowerCase().includes("partner has disconnected"))) {
+                const selfName = userMap[currentUserID] || registeredName;
+                setUserMap(currentUserID ? { [currentUserID]: selfName } : {});
+                setCurrentEncryptionKey(null); setPendingMessages([]);
             }
         };
-    };
-
-    const reconnectWebSocket = () => {
-        if (!chatStarted) return;
-        console.log("Attempting WebSocket reconnection in 3 seconds...");
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = setTimeout(() => {
-            if (chatStarted && (!socketRef.current || socketRef.current.readyState === WebSocket.CLOSED)) {
-                connectWebSocket();
-            }
-        }, 3000);
-    };
-
-    const disconnectWebSocket = () => {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-        if (socketRef.current) {
-            console.log("Disconnecting WebSocket explicitly.");
-            socketRef.current.close(1000, "User disconnected");
-            socketRef.current = null;
-        }
-        setIsConnecting(false);
-    };
-
-    // --- Message Handling ---
-    const handleMessage = (received) => {
-        // console.log("Received WS message:", received);
-        switch (received.type) {
-            case "userID": handleUserIDMessage(received); break;
-            case "chat": handleChatMessage(received); break;
-            case "systemMessage": handleSystemMessage(received); break;
-            case "chatEnded": handleChatEndedMessage(received); break;
-            case "encryptionKey": handleEncryptionKeyMessage(received); break;
-            case "partnerConnected": handlePartnerConnectedMessage(received); break;
-            // Removed moderationWarning and mute handlers as mute is removed
-            default: console.warn("Unknown msg type:", received.type, received);
-        }
-    };
-
-    const handleUserIDMessage = (received) => {
-        userIDRef.current = received.userID;
-        console.log("Assigned UserID:", received.userID);
-        setStatus("Waiting for partner...");
-    };
-
-    const handlePartnerConnectedMessage = (received) => {
-        console.log("Partner connected:", received.partnerID, "Name:", received.partnerName);
-        if (received.partnerName && received.partnerID) {
-             setUserMap(prev => ({ ...prev, [received.partnerID]: received.partnerName }));
-        }
-        // Status update will likely come with the encryption key or system message
-        // setStatus(`Connected with ${received.partnerName || 'Partner'}! Say hi.`);
-    };
-
-    const handleChatMessage = (received) => {
-        if (!encryptionKeyRef.current) {
-            console.warn("ChatMsg: No encryption key yet, queuing message from", received.senderID);
-            setPendingMessages((prev) => [...prev, received]);
-            return;
-        }
-        if (!received.senderID || !received.text) {
-            console.warn("ChatMsg: Received incomplete message", received);
-            return;
-        }
-
-        // Update user map if partner name changes or wasn't known
-        if (received.senderID !== userIDRef.current && received.senderName && (!userMap[received.senderID] || userMap[received.senderID] !== received.senderName)) {
-            setUserMap((prev) => ({ ...prev, [received.senderID]: received.senderName }));
-        }
-         // Update status if receiving first message from partner
-        const partnerName = userMap[received.senderID] || received.senderName || 'Partner';
-        if (received.senderID !== userIDRef.current && (status.includes("Waiting") || status.includes("Connected! Say hi."))) {
-             setStatus(`Chatting with ${partnerName}`);
-        }
-
-
-        let decryptedText;
-        try {
-            if (typeof received.text !== 'string' || received.text.length === 0) {
-                throw new Error("Invalid ciphertext: empty or not a string");
-            }
-
-            let encryptedBytes = CryptoJS.enc.Base64.parse(received.text);
-            if (encryptedBytes.sigBytes < 32) {
-                throw new Error(`Ciphertext too short: got ${encryptedBytes.sigBytes} bytes, expected at least 32`);
-            }
-
-            const iv = encryptedBytes.clone();
-            iv.sigBytes = 16;
-            iv.clamp();
-
-            const ciphertext = encryptedBytes.clone();
-            ciphertext.words.splice(0, 4);
-            ciphertext.sigBytes -= 16;
-
-            if (ciphertext.sigBytes === 0) {
-                throw new Error("No ciphertext data after IV");
-            }
-            if (!/^[0-9a-fA-F]{64}$/.test(encryptionKeyRef.current)) {
-                throw new Error(`Invalid key format on client`);
-            }
-
-            const keyWordArray = CryptoJS.enc.Hex.parse(encryptionKeyRef.current);
-            const decrypted = CryptoJS.AES.decrypt(
-                { ciphertext: ciphertext },
-                keyWordArray,
-                { iv: iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 }
-            );
-            decryptedText = decrypted.toString(CryptoJS.enc.Utf8);
-
-            if (!decryptedText && ciphertext.sigBytes > 0) {
-                // Attempt to decode as latin1 as a fallback if utf8 fails (less likely needed with proper server padding)
-                try {
-                    decryptedText = decrypted.toString(CryptoJS.enc.Latin1);
-                    if (decryptedText) console.warn("Decrypted as Latin1 after Utf8 failed.");
-                    else throw new Error("Decryption produced empty result (possible padding or key mismatch)");
-                } catch (latinError) {
-                     throw new Error("Decryption produced empty result (possible padding or key mismatch)");
+        const onPartnerConnected = (data) => {
+            const selfName = userMap[currentUserID] || registeredName;
+            setUserMap({
+                ...(currentUserID && selfName ? { [currentUserID]: selfName } : {}),
+                [data.partnerID]: data.partnerName 
+            });
+            setStatus(`Chatting with ${data.partnerName}`);
+            setMessages(prev => cleanupOldMessages([...prev, { type: 'system', text: `You are now chatting with ${data.partnerName}.`, id: generateSystemMessageId(), timestamp: Date.now() }], selfDestructEnabled, destructTime, customTime));
+        };
+        const onEncryptionKey = (data) => {
+            if (data.key && /^[0-9a-fA-F]{64}$/.test(data.key)) {
+                setCurrentEncryptionKey(data.key);
+                const partnerId = Object.keys(userMap).find(id => id !== currentUserID && id !== 'system');
+                const currentPartnerName = userMap[partnerId] || "Partner";
+                setStatus(`Chatting with ${currentPartnerName}`);
+                setMessages(prev => cleanupOldMessages([...prev, { type: 'system', text: 'Secure connection established.', id: generateSystemMessageId(), timestamp: Date.now() }], selfDestructEnabled, destructTime, customTime));
+                if (pendingMessages.length > 0) {
+                    const toProcess = [...pendingMessages]; setPendingMessages([]);
+                    toProcess.forEach(msg => onChatMessageFromServer(msg));
                 }
-            }
-            // console.log(`Decrypt Success: Decrypted="${decryptedText.substring(0, 30)}..."`);
-
-        } catch (e) {
-            decryptedText = `<Decryption Failed: ${e.message}>`;
-            console.error(`Client Decrypt Error: ${e.message}, Ciphertext="${received.text.substring(0, 20)}..."`, "Key:", encryptionKeyRef.current?.substring(0,8)+"...");
-        }
-
-        const serverTimestamp = received.timestamp;
-        const messageId = received.id || `${received.senderID}-${serverTimestamp || Date.now()}`;
-        const newMessageData = {
-            id: messageId,
-            senderID: received.senderID,
-            senderName: partnerName, // Use resolved name
-            text: decryptedText, // This is the decrypted text received from partner
-            timestamp: serverTimestamp || Date.now()
+            } else { setStatus("Error: Secure connection failed (Bad Key). Skipping..."); if(socket) socket.emit('skip');}
         };
-        logTimestamp(`handleChatMessage - Storing received message "${newMessageData.text.substring(0,10)}..."`, newMessageData.timestamp);
-
-        setMessages((prev) => {
-            if (prev.some(msg => msg.id === newMessageData.id)) {
-                return prev; // Avoid duplicates
+        const onChatMessageFromServer = (received) => {
+            if (!currentEncryptionKey) { setPendingMessages(prev => [...prev, received]); return; }
+            const decryptedText = decryptMessageClientSide(received.text, currentEncryptionKey);
+            const messageId = received.id || `${received.senderID}-${received.timestamp || Date.now()}`;
+            const newMsgData = { id: messageId, senderID: received.senderID, senderName: userMap[received.senderID] || received.senderName || "Partner", text: decryptedText, timestamp: received.timestamp || Date.now(), type: 'partner' };
+            if (received.senderName && (!userMap[received.senderID] || userMap[received.senderID] !== received.senderName)) {
+                setUserMap(prev => ({ ...prev, [received.senderID]: received.senderName }));
             }
-            const cleaned = selfDestructEnabled ? cleanupOldMessages(prev, destructTime, customTime) : prev;
-            return [...cleaned, newMessageData];
-        });
-    };
+            setMessages(prev => cleanupOldMessages([...prev, newMsgData], selfDestructEnabled, destructTime, customTime));
+        };
+        const onChatEnded = () => {
+            const currentPartnerId = Object.keys(userMap).find(id => id !== currentUserID && id !== 'system');
+            const partnerNameDisplay = userMap[currentPartnerId] || "Partner";
+            setMessages(prev => cleanupOldMessages([...prev, { type: 'system', text: `Chat with ${partnerNameDisplay} ended. Finding new partner...`, id: generateSystemMessageId(), timestamp: Date.now() }], selfDestructEnabled, destructTime, customTime));
+            const selfName = userMap[currentUserID] || registeredName;
+            setUserMap(currentUserID ? { [currentUserID]: selfName } : {});
+            setCurrentEncryptionKey(null); setPendingMessages([]);
+            setStatus('Waiting for a new partner...');
+        };
 
-    const handleSystemMessage = (received) => {
-        const systemMsgId = `system-${Date.now()}`;
-        console.log("System Msg:", received.text);
-        // Avoid overwriting specific statuses like 'Chatting with X' with generic messages
-        if (received.text.includes("connected") || received.text.includes("Finding") || received.text.includes("Waiting") || received.text.includes("Disconnected") || received.text.includes("Error")) {
-             setStatus(received.text);
-        }
-        setMessages((prev) => [...prev, {
-            id: systemMsgId,
-            senderID: "system",
-            senderName: "System",
-            text: received.text,
-            timestamp: Date.now()
-        }]);
-    };
+        socket.on('connect', onConnect); socket.on('disconnect', onDisconnect);
+        socket.on('connect_error', onConnectError); socket.on('userID', onUserID);
+        socket.on('systemMessage', onSystemMessage); socket.on('partnerConnected', onPartnerConnected);
+        socket.on('encryptionKey', onEncryptionKey); socket.on('chat', onChatMessageFromServer);
+        socket.on('chatEnded', onChatEnded);
+        return () => { 
+            socket.off('connect'); socket.off('disconnect'); socket.off('connect_error');
+            socket.off('userID'); socket.off('systemMessage'); socket.off('partnerConnected');
+            socket.off('encryptionKey'); socket.off('chat'); socket.off('chatEnded');
+        };
+    }, [socket, registeredName, currentEncryptionKey, selfDestructEnabled, destructTime, customTime, currentUserID, userMap, pendingMessages]);
 
-    const handleChatEndedMessage = () => {
-        console.log("Chat ended (partner disconnected or skipped).");
-        const currentPartnerId = Object.keys(userMap).find(id => id !== userIDRef.current && id !== 'system');
-        const statusMsg = `Partner (${userMap[currentPartnerId] || 'Partner'}) disconnected. Finding new partner...`;
-        setStatus(statusMsg);
-        // Add a system message confirming disconnect
-        setMessages((prev) => [...prev, {
-            id: `system-ended-${Date.now()}`,
-            senderID: "system",
-            senderName: "System",
-            text: `Partner (${userMap[currentPartnerId] || 'Partner'}) has left the chat.`,
-            timestamp: Date.now()
-        }]);
-
-        setUserMap(prev => { // Keep own user mapping if needed, clear others
-            const newMap = {};
-            if (userIDRef.current && prev[userIDRef.current]) {
-                newMap[userIDRef.current] = prev[userIDRef.current];
-            }
-            return newMap;
-        });
-        encryptionKeyRef.current = null;
-        setPendingMessages([]);
-        console.log("Encryption key cleared due to chat end.");
-    };
-
-    const handleEncryptionKeyMessage = (received) => {
-        if (received.key && typeof received.key === 'string' && /^[0-9a-fA-F]{64}$/.test(received.key)) {
-            encryptionKeyRef.current = received.key;
-            console.log("Received and set shared encryption key:", received.key.substring(0, 8) + "...");
-
-            // Update status now that connection is secure
-            const partnerId = Object.keys(userMap).find(id => id !== userIDRef.current && id !== 'system');
-            const partnerName = userMap[partnerId] || 'Partner';
-            setStatus(`Chatting with ${partnerName}`);
-
-
-            if (pendingMessages.length > 0) {
-                console.log(`Processing ${pendingMessages.length} pending messages now key is received.`);
-                const messagesToProcess = [...pendingMessages];
-                setPendingMessages([]);
-                messagesToProcess.forEach(msg => handleChatMessage(msg)); // Re-process with key
-            }
-        } else {
-            console.error("Received invalid or empty encryption key message:", received);
-            setStatus("Error: Could not establish secure connection (Invalid Key).");
-            // Maybe disconnect or skip?
-            skipToNextUser(); // Attempt to get a new partner/key
-        }
-    };
-
-    // --- Actions ---
-    const startChat = () => {
-        if (name.trim()) {
-            setChatStarted(true);
-        } else {
-            setStatus("Please enter a nickname to start.");
-        }
-    };
-
-    const sendMessage = () => {
-        const messageToSend = newMessage.trim(); // Use trimmed version
-        if (!messageToSend) return; // Don't send empty messages
-
-        if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
-            setStatus("Error: Not connected to server.");
-            reconnectWebSocket();
-            return;
-        }
-        if (!encryptionKeyRef.current) {
-            setStatus("Error: Secure connection not ready.");
-            return;
-        }
-        // Mute check removed
-        if (!userIDRef.current) {
-             setStatus("Error: User ID not assigned.");
-             return;
-        }
-
-        let encryptedBase64;
+    const encryptMessageClientSide = (text, keyHex) => { /* ... No change ... */ 
+        if (!keyHex) { console.error("Encrypt: No key"); return null; }
         try {
-            if (!/^[0-9a-fA-F]{64}$/.test(encryptionKeyRef.current)) {
-                throw new Error(`Invalid key format for encryption`);
-            }
-            const keyWordArray = CryptoJS.enc.Hex.parse(encryptionKeyRef.current);
-            const iv = CryptoJS.lib.WordArray.random(16);
-            const encryptedData = CryptoJS.AES.encrypt(
-                messageToSend, // Encrypt the original trimmed message
-                keyWordArray,
-                { iv: iv, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 }
-            );
-
-            if (!encryptedData.ciphertext || encryptedData.ciphertext.sigBytes === 0) {
-                throw new Error("Encryption produced empty ciphertext");
-            }
-            const combined = iv.concat(encryptedData.ciphertext);
-            encryptedBase64 = CryptoJS.enc.Base64.stringify(combined);
-
-            if (!encryptedBase64) {
-                 throw new Error("Base64 encoding failed");
-            }
-            const byteLength = CryptoJS.enc.Base64.parse(encryptedBase64).sigBytes;
-            if (byteLength < 32) {
-                 throw new Error(`Encrypted output too short: got ${byteLength} bytes`);
-            }
-            // console.log(`Encrypt Success: OutputB64="${encryptedBase64.substring(0, 20)}...", OriginalText="${messageToSend.substring(0, 10)}..."`);
-
-        } catch (e) {
-            console.error(`Client Encrypt Error: ${e.message}`);
-            setStatus("Encryption error. Message not sent.");
-            return;
-        }
-
-        const timestamp = Date.now();
-        const messageID = `${userIDRef.current}-${timestamp}`; // Unique ID
-
-        // CENSOR the message text *before* adding it to the local state
-        const censoredLocalText = censorClientMessage(messageToSend);
-
-        // Prepare message for WebSocket (send encrypted original text)
-        const messageDataWs = {
-            type: "chat",
-            senderID: userIDRef.current,
-            senderName: name,
-            text: encryptedBase64, // Send encrypted *original*
-            timestamp: timestamp,
-            id: messageID
-        };
-        socketRef.current.send(JSON.stringify(messageDataWs));
-
-        // Prepare message for local display (use censored text)
-        const localMessageData = {
-            id: messageID,
-            senderID: userIDRef.current,
-            senderName: name,
-            text: censoredLocalText, // Show censored version locally
-            timestamp: timestamp
-        };
-        logTimestamp(`sendMessage - Storing local (censored) message "${localMessageData.text.substring(0,10)}..."`, localMessageData.timestamp);
-
-        setMessages((prev) => {
-            const cleaned = selfDestructEnabled ? cleanupOldMessages(prev, destructTime, customTime) : prev;
-            return [...cleaned, localMessageData];
-        });
-        setNewMessage(""); // Clear input
+            const key = CryptoJS.enc.Hex.parse(keyHex); const iv = CryptoJS.lib.WordArray.random(16);
+            const encrypted = CryptoJS.AES.encrypt(text, key, { iv: iv, padding: CryptoJS.pad.Pkcs7, mode: CryptoJS.mode.CBC });
+            return iv.concat(encrypted.ciphertext).toString(CryptoJS.enc.Base64);
+        } catch (e) { console.error("Encrypt Error:", e); return null; }
+    };
+    const decryptMessageClientSide = (encryptedBase64, keyHex) => { /* ... No change ... */
+        if (!keyHex) { console.error("Decrypt: No key"); return "<Decrypt Error: No Key>";}
+        try {
+            const key = CryptoJS.enc.Hex.parse(keyHex);
+            const encryptedDataWithIv = CryptoJS.enc.Base64.parse(encryptedBase64);
+            if (encryptedDataWithIv.sigBytes < 16) return "<Decrypt Error: Data too short>";
+            const iv = CryptoJS.lib.WordArray.create(encryptedDataWithIv.words.slice(0, 4), 16);
+            const ciphertext = CryptoJS.lib.WordArray.create(encryptedDataWithIv.words.slice(4), encryptedDataWithIv.sigBytes - 16);
+            if (ciphertext.sigBytes <= 0) return "<Decrypt Error: No Ciphertext>";
+            const decrypted = CryptoJS.AES.decrypt({ ciphertext: ciphertext }, key, { iv: iv, padding: CryptoJS.pad.Pkcs7, mode: CryptoJS.mode.CBC });
+            const text = decrypted.toString(CryptoJS.enc.Utf8);
+            if(!text && encryptedBase64) return "<Decrypt Error: Empty Result>";
+            return text;
+        } catch (e) { return `<Decrypt Err: ${e.message.slice(0,20)}>`; }
     };
 
-    const startVideoCall = () => alert("Video call functionality is not implemented.");
+    const handleStartChatSubmit = (e) => {
+        e.preventDefault();
+        if (nameForEntry.trim()) {
+            setRegisteredName(nameForEntry); setChatStarted(true);
+            localStorage.setItem('chatUsername', nameForEntry);
+            setError(''); // Clear previous errors
+        } else { setStatus("Nickname cannot be empty."); }
+    };
 
-    const skipToNextUser = () => {
-        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-            console.log("Sending skip request...");
-            setStatus("Skipping... Finding new partner...");
-            socketRef.current.send(JSON.stringify({ type: "skip" }));
-            // Don't clear messages immediately, maybe add a system message?
-             setMessages((prev) => [...prev, {
-                id: `system-skip-${Date.now()}`,
-                senderID: "system",
-                senderName: "System",
-                text: "You skipped the chat. Looking for someone new...",
-                timestamp: Date.now()
-            }]);
-
-            setUserMap(prev => { // Clear partner from map
-                 const newMap = {};
-                 if (userIDRef.current && prev[userIDRef.current]) {
-                     newMap[userIDRef.current] = prev[userIDRef.current];
-                 }
-                 return newMap;
-             });
-            encryptionKeyRef.current = null;
-            setPendingMessages([]);
-            // Mute state removed
-            console.log("Encryption key cleared due to skip request.");
-        } else {
-            console.warn("Skip: WebSocket not open or not available.");
-            setStatus("Cannot skip partner. Not connected.");
-            reconnectWebSocket();
+    const sendMessageUI = () => {
+        const messageToSend = newMessage.trim();
+        if (!messageToSend) { setError("Message cannot be empty."); return; }
+        const partnerId = Object.keys(userMap).find(id => id !== currentUserID && id !== 'system');
+        if (!socket || !currentUserID || !currentEncryptionKey || !partnerId) {
+            setError("Cannot send. Not fully connected or no partner."); return;
         }
+        const censoredLocalText = censorClientMessageText(messageToSend);
+        const encryptedBase64 = encryptMessageClientSide(censoredLocalText, currentEncryptionKey);
+        if (encryptedBase64) {
+            const timestamp = Date.now(); const messageID = `${currentUserID}-${timestamp}`;
+            const messageDataWs = { text: encryptedBase64, timestamp: timestamp, id: messageID };
+            socket.emit('chat', messageDataWs);
+            const localMessageData = {
+                id: messageID, senderID: currentUserID, senderName: registeredName,
+                text: censoredLocalText, timestamp: timestamp, type: 'user'
+            };
+            setMessages(prev => cleanupOldMessages([...prev, localMessageData], selfDestructEnabled, destructTime, customTime));
+            setNewMessage(""); setError("");
+        } else { setError("Error: Failed to encrypt message."); }
     };
 
     const handleKeyPress = (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessageUI(); }
+    };
+    
+    const skipToNextUser = () => {
+        if (socket) { setStatus("Skipping..."); socket.emit('skip'); }
     };
 
     const goBackToHome = () => {
-        console.log("[Go Back] Leaving chat and disconnecting.");
-        setChatStarted(false); // Triggers useEffect cleanup
-        setName("");
-        setMessages([]);
-        setUserMap({});
-        setStatus("Disconnected.");
-        userIDRef.current = null;
-        encryptionKeyRef.current = null;
-        setPendingMessages([]);
-        // Mute state removed
+        setChatStarted(false); setNameForEntry(localStorage.getItem('chatUsername') || "");
+        setRegisteredName(''); setMessages([]); setUserMap({});
+        setStatus("Enter nickname to start new chat."); setCurrentUserID(null);
+        setCurrentEncryptionKey(null); setPendingMessages([]); setError('');
+        navigate('/');
+    };
+    
+    const startVideoCall = () => {
+        const partnerId = Object.keys(userMap).find(id => id !== currentUserID && id !== 'system');
+        const partnerNameFromMap = userMap[partnerId];
+        if (partnerId && currentUserID && currentEncryptionKey) {
+            navigate('/video', { state: { userID: currentUserID, partnerID: partnerId, partnerName: partnerNameFromMap || "Partner", encryptionKey: currentEncryptionKey } });
+        } else { setStatus("Cannot start video call: No partner or secure connection."); setError("No partner available for video call.");}
     };
 
-    const handleNameSelectionKeyPress = (e) => {
-        if (e.key === "Enter") {
-            e.preventDefault();
-            startChat();
-        }
-    };
-
-    // --- Mount/Unmount Log ---
-    useEffect(() => {
-        console.log('%c[Lifecycle] CHAT COMPONENT MOUNTED', 'background: #222; color: #bada55');
-        return () => {
-            console.log('%c[Lifecycle] CHAT COMPONENT UNMOUNTED', 'background: #222; color: #ff69b4');
-            if (intervalIdRef.current) {
-                clearInterval(intervalIdRef.current);
-                intervalIdRef.current = null;
-            }
-            disconnectWebSocket();
-        };
-    }, []);
-
-    // --- SELF-DESTRUCT UseEffect ---
-    useEffect(() => {
-        if (intervalIdRef.current) {
-            clearInterval(intervalIdRef.current);
-            intervalIdRef.current = null;
-        }
-
-        if (selfDestructEnabled && chatStarted) {
-            setMessages(currentMessages => cleanupOldMessages(currentMessages, destructTime, customTime));
-
-            let intervalMs = 10000;
-             if (destructTime === "custom") {
-                 const customSeconds = parseInt(customTime, 10);
-                 if (!isNaN(customSeconds) && customSeconds < 60) {
-                     intervalMs = Math.max(2000, customSeconds * 1000 / 3);
-                 }
-            } else if (destructTime === "30sec") intervalMs = 5000;
-            else if (destructTime === "60sec") intervalMs = 10000;
-
-            intervalIdRef.current = setInterval(() => {
-                setMessages(currentMessages => cleanupOldMessages(currentMessages, destructTime, customTime));
-            }, intervalMs);
-            // console.log(`[Self-Destruct Effect] Set interval: ${intervalIdRef.current} (every ${intervalMs}ms)`);
-        }
-
-        return () => {
-            if (intervalIdRef.current) {
-                // console.log(`[Self-Destruct Effect Cleanup] Clearing interval: ${intervalIdRef.current}`);
-                clearInterval(intervalIdRef.current);
-                intervalIdRef.current = null;
-            }
-        };
-    }, [selfDestructEnabled, destructTime, customTime, chatStarted]);
-
-    // --- cleanupOldMessages Function ---
-    const cleanupOldMessages = (currentMessages, currentDestructTime, currentCustomTime) => {
-        if (!selfDestructEnabled || currentMessages.length === 0) {
-            return currentMessages;
-        }
+    const cleanupOldMessages = (currentMessages, currentSelfDestructEnabled, currentDestructTime, currentCustomTime) => {
+        if (!currentSelfDestructEnabled || currentMessages.length === 0) return currentMessages;
         let destructionTimeMs;
         const defaultTimeMs = 300 * 1000;
         if (currentDestructTime === "custom") {
             const customSeconds = parseInt(currentCustomTime, 10);
-            destructionTimeMs = (!isNaN(customSeconds) && customSeconds >= 10 && customSeconds <= 3600)
-                ? customSeconds * 1000
-                : defaultTimeMs;
+            destructionTimeMs = (!isNaN(customSeconds) && customSeconds >= 10 && customSeconds <= 3600) ? customSeconds * 1000 : defaultTimeMs;
         } else {
             const timeMap = {"30sec": 30*1000, "60sec": 60*1000, "120sec": 120*1000, "300sec": 300*1000, "600sec": 600*1000};
             destructionTimeMs = timeMap[currentDestructTime] || defaultTimeMs;
         }
         const now = Date.now();
-        const filteredMessages = currentMessages.filter(msg => {
-            if (!msg.timestamp || typeof msg.timestamp !== 'number' || msg.timestamp > now + 60000) { // Increased future skew tolerance
-                 console.warn("[Self-Destruct Filter] Invalid or large future timestamp, keeping for now:", msg);
-                return true; // Keep message if timestamp is invalid
-            }
+        return currentMessages.filter(msg => {
+            if (msg.type === 'system') return true;
+            if (!msg.timestamp || typeof msg.timestamp !== 'number' || msg.timestamp > now + 60000) return true;
             return (now - msg.timestamp) < destructionTimeMs;
         });
-        if (filteredMessages.length !== currentMessages.length) {
-             console.log(`[Self-Destruct Cleanup] Removed ${currentMessages.length - filteredMessages.length} messages.`);
-            return filteredMessages;
-        }
-        return currentMessages;
     };
 
+    useEffect(() => {
+        let intervalId = null;
+        if (selfDestructEnabled && chatStarted && currentUserID) {
+            const runCleanup = () => setMessages(prev => cleanupOldMessages(prev, selfDestructEnabled, destructTime, customTime));
+            runCleanup();
+            let intervalMs = 10000;
+            if (destructTime === "custom") { /* ... */ } else if (destructTime === "30sec") intervalMs = 5000;
+            intervalId = setInterval(runCleanup, intervalMs);
+            intervalIdRef.current = intervalId;
+        }
+        return () => { if (intervalId) clearInterval(intervalId); };
+    }, [selfDestructEnabled, destructTime, customTime, chatStarted, currentUserID]);
 
-    // --- JSX Structure (Restored Original) ---
+    useEffect(() => {
+        if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTo({ top: chatContainerRef.current.scrollHeight, behavior: "smooth" });
+        }
+    }, [messages]);
+
+    // --- JSX Structure (from your reference code, with inline styles for bubbles) ---
+    // Added className for theme targeting at the top level of the returned JSX for Chat.jsx
     return (
-        <div className="chat-page d-flex align-items-center justify-content-center" style={{ width: "100vw", minHeight: "100vh", backgroundColor: theme === "dark" ? "#121212" : "#f8f9fa", color: theme === "dark" ? "#ffffff" : "#333333", position: "relative", overflow: "hidden", transition: "background-color 0.3s ease, color 0.3s ease" }}>
-            <Container>
-                {!chatStarted ? (
-                    // --- Nickname Selection Screen ---
+        <div className={`chat-page d-flex align-items-center justify-content-center ${theme === "dark" ? "theme-dark" : "theme-light"}`} style={{ width: "100vw", minHeight: "100vh", backgroundColor: theme === "dark" ? "#121212" : "#f0f2f5", color: theme === "dark" ? "#ffffff" : "#212529", transition: "background-color 0.3s ease, color 0.3s ease", position: "relative", overflow: "hidden" }}>
+            <Container style={{paddingTop: '20px', paddingBottom: '20px', maxWidth: '850px'}}> {/* Made container slightly wider */}
+                {!chatStarted || !currentUserID ? (
                     <Row className="justify-content-center">
-                        <Col md={6} lg={4}>
-                            <div style={{ maxWidth: '400px', margin: '20px auto', padding: '20px', background: theme === 'dark' ? '#1e1e1e' : '#fff', borderRadius: '8px', boxShadow: theme === 'dark' ? '0 4px 8px rgba(255,255,255,0.1)' : '0 4px 8px rgba(0,0,0,0.1)' }}>
-                                <h3 className="text-center mb-4">Enter Chat</h3>
-                                <Form onSubmit={(e) => { e.preventDefault(); startChat(); }}>
+                        <Col md={6} lg={5}>
+                            {/* Added nickname-card class for specific dark theme styling from App.css */}
+                            <div className={`nickname-card`} style={{ padding: '30px 25px', background: theme === 'dark' ? '#1e1e1e' : '#fff', borderRadius: '12px', boxShadow: theme === 'dark' ? '0 6px 20px rgba(255,255,255,0.08)' : '0 6px 20px rgba(0,0,0,0.1)' }}>
+                                <h3 className="text-center mb-4">Enter Chat Nickname</h3>
+                                <Form onSubmit={handleStartChatSubmit}>
                                     <Form.Group className="mb-3">
-                                        <Form.Label>Nickname:</Form.Label>
                                         <Form.Control
+                                            ref={nameInputRef}
                                             type="text"
                                             placeholder="Your nickname"
-                                            value={name}
-                                            onChange={(e) => setName(e.target.value)}
-                                            onKeyDown={handleNameSelectionKeyPress}
-                                            autoFocus
+                                            value={nameForEntry}
+                                            onChange={(e) => {setNameForEntry(e.target.value); localStorage.setItem('chatUsername', e.target.value);}}
+                                            onKeyDown={(e) => {if (e.key === 'Enter' && nameForEntry.trim()) handleStartChatSubmit(e);}}
                                             maxLength={20}
-                                         />
+                                            autoFocus
+                                            className={theme === 'dark' ? 'form-control-dark' : ''}
+                                        />
                                     </Form.Group>
                                     <div className="d-grid">
-                                        <Button variant="primary" type="submit" disabled={!name.trim()}>Start Chat</Button>
+                                        <Button variant="primary" type="submit" disabled={!nameForEntry.trim() || isConnecting || (socket && !socket.connected) }>
+                                            {(isConnecting && status.includes("Connecting")) || status.includes("Registering...") ? <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-1" /> : null}
+                                            Start Chat
+                                        </Button>
                                     </div>
-                                    {/* Show specific status messages */}
-                                    {status && (status.startsWith('Please') || status.includes("failed") || status.includes("Disconnected")) && (
-                                        <p className={`text-center mt-2 small ${status.startsWith('Please') || status.includes("failed") ? 'text-danger' : 'text-muted'}`}>{status}</p>
-                                    )}
                                 </Form>
+                                {status && (status.startsWith('Please enter') || status.includes("failed") || status.includes("Disconnected") || status.includes("Connecting to chat server") || status.includes("Registering...")) && (
+                                    // Using a div for status messages that might contain a spinner
+                                    <div className={`text-center mt-3 small ${status.includes("failed") ? 'text-danger' : (theme === 'dark' ? 'text-light-emphasis' : 'text-muted')}`}>
+                                        {(isConnecting && status.includes("Connecting")) && (!socket || !socket.connected) ? <Spinner animation="border" size="sm" className="me-1"/> : null}
+                                        {status.includes("Registering...") && !isConnecting ? <Spinner animation="border" size="sm" className="me-1"/> : null}
+                                        {status}
+                                    </div>
+                                )}
+                                {error && <Alert variant="danger" className="mt-2 py-1 px-2 small">{error}</Alert> }
                             </div>
                         </Col>
                     </Row>
                 ) : (
-                    // --- Main Chat Interface (Restored Original Layout) ---
                     <Row className="justify-content-center">
-                        <Col md={8} lg={6} className="p-3 rounded d-flex flex-column" style={{ backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff", color: theme === "dark" ? "#ffffff" : "#333333", border: theme === "dark" ? "1px solid #333" : "1px solid #ddd", boxShadow: theme === "dark" ? "0px 4px 15px rgba(0, 0, 0, 0.2)" : "0px 4px 15px rgba(0, 0, 0, 0.1)", transition: "background-color 0.3s ease, color 0.3s ease, border 0.3s ease", display: 'flex', flexDirection: 'column', height: 'calc(100vh - 80px)', minHeight: '450px', maxHeight: '85vh' }}>
-                            {/* Header */}
-                            <h2 className="text-center" style={{ fontSize: '1.5rem', marginBottom: '0.25rem' }}>Anonymous Chat</h2>
-                            <p className="text-center mb-1" style={{fontSize: '0.9rem'}}>Nickname: <span style={{ fontWeight: 'bold' }}>{name}</span></p>
-
-                            {/* Status Bar */}
-                            <div className="text-center my-1">
-                                <small style={{ fontStyle: "italic", fontSize: '0.85rem', opacity: 0.9 }}>{status}</small>
-                                {isConnecting && <Spinner animation="border" size="sm" className="ms-2" variant={theme === 'dark' ? 'light' : 'primary'} />}
+                        {/* Adjusted Col size to make chat window slightly bigger as requested */}
+                        <Col md={11} lg={9} xl={8} className={`p-0 rounded d-flex flex-column chat-box-container ${theme === "dark" ? "dark" : ""}`} 
+                             style={{ 
+                                 height: 'calc(100vh - 80px)', // Made slightly taller
+                                 minHeight: '500px',          // Increased min height
+                                 maxHeight: '85vh',          // Kept max height relative
+                                 boxShadow: theme === 'dark' ? '0 8px 30px rgba(0,0,0,0.4)' : '0 8px 30px rgba(0,0,0,0.15)', // Enhanced shadow
+                                 border: theme === "dark" ? "1px solid #383838" : "1px solid #dee2e6",
+                                 // Background color will be handled by App.css .chat-box-container classes for theme
+                             }}>
+                            <div className={`p-3 border-bottom d-flex justify-content-between align-items-center chat-box-header ${theme === 'dark' ? 'border-secondary' : ''}`}>
+                                <div>
+                                    <h2 className="mb-0" style={{ fontSize: '1.1rem' }}> {/* Changed from h5 */}
+                                        {registeredName} (You)
+                                        {Object.keys(userMap).find(id => id !== currentUserID && id !== 'system') && 
+                                         <span className="mx-1">-</span> /* Added separator */
+                                        }
+                                        {Object.keys(userMap).find(id => id !== currentUserID && id !== 'system') && 
+                                         <span style={{fontWeight: 'normal'}}>Chatting with: {userMap[Object.keys(userMap).find(id => id !== currentUserID && id !== 'system')] || "Partner"}</span>
+                                        }
+                                    </h2>
+                                    <small className="text-muted" style={{fontSize: '0.8rem', display: 'block', marginTop: '2px'}}> {/* Made status block for alignment */}
+                                        {status}
+                                    </small>
+                                </div>
+                                <div> {/* Buttons */}
+                                     <Button title="Video Call" variant="outline-success" size="sm" onClick={startVideoCall} disabled={!currentUserID || !Object.keys(userMap).find(id => id !== currentUserID && id !== 'system') || !currentEncryptionKey} className="me-2"><FaVideo /></Button>
+                                     <Button title="Skip Partner" variant="outline-warning" size="sm" onClick={skipToNextUser} disabled={isConnecting || !currentUserID || !Object.keys(userMap).find(id => id !== currentUserID && id !== 'system') || status.includes("Finding") || status.includes("Waiting") || status.includes("Skipping")} className="me-2"><FaRedo /></Button>
+                                     <Button title="Leave Chat" variant="outline-danger" size="sm" onClick={goBackToHome}><FaSignOutAlt /></Button>
+                                </div>
                             </div>
+                            
+                            {error && <Alert variant="danger" className="m-2 mb-0 py-1 px-2 small">{error}</Alert>}
 
-                            {/* Message Display Area */}
-                            <div ref={chatContainerRef} className="chat-box p-3 rounded mt-2 flex-grow-1" style={{ overflowY: "auto", display: "flex", flexDirection: "column", backgroundColor: theme === "dark" ? "#2a2a2a" : "#f1f1f1", marginBottom: '10px', border: theme === 'dark' ? '1px solid #444' : '1px solid #eee' }}>
-                                {messages.map((msg) => ( // Removed index key, using message ID
-                                    <div key={msg.id} style={{ width: "fit-content", maxWidth: "80%", alignSelf: msg.senderID === userIDRef.current ? "flex-end" : (msg.senderID === 'system' ? 'center' : 'flex-start'), backgroundColor: msg.senderID === "system" ? (theme === 'dark' ? '#444' : '#eee') : msg.senderID === userIDRef.current ? (theme === 'dark' ? '#0b533f' : '#d1e7dd') : (theme === 'dark' ? '#0a4a8f' : '#cfe2ff'), color: msg.senderID === 'system' ? (theme==='dark'? '#ccc' : '#555') : (theme === 'dark' ? '#e0e0e0' : '#000'), padding: msg.senderID === "system" ? "6px 12px" : "8px 12px", borderRadius: msg.senderID === "system" ? "10px" : (msg.senderID === userIDRef.current ? "15px 5px 15px 15px" : "5px 15px 15px 15px"), marginBottom: "8px", fontSize: msg.senderID === 'system' ? '0.85rem' : '1rem', fontStyle: msg.senderID === 'system' ? 'italic' : 'normal', wordBreak: 'break-word', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', border: msg.senderID === 'system' ? 'none' : (theme === 'dark' ? '1px solid #444' : '1px solid #ccc'), textAlign: msg.senderID === 'system' ? 'center' : 'left', margin: msg.senderID === 'system' ? '5px auto' : '' }}>
-                                        {/* Partner Name */}
-                                        {msg.senderID !== userIDRef.current && msg.senderID !== "system" && (
-                                            <strong style={{ display: 'block', marginBottom: '3px', fontSize: '0.75rem', opacity: 0.8, color: theme === 'dark' ? '#aaa' : '#555' }}>
-                                                {/* Use userMap or fallback */}
-                                                {userMap[msg.senderID] || msg.senderName || "Partner"}
-                                            </strong>
-                                        )}
-                                        {/* Message Text */}
-                                        {msg.text.startsWith('<Decryption') ? (
-                                            <span style={{fontStyle: 'italic', opacity: 0.7, color: 'red'}}>{msg.text}</span>
-                                        ) : (
-                                            // Render normal text (consider link detection or markdown later if needed)
-                                            msg.text
-                                        )}
-                                        {/* Timestamp */}
-                                         {msg.senderID !== "system" && msg.timestamp && ( // Only show for non-system messages with valid timestamp
-                                            <span style={{fontSize: '0.7rem', opacity: 0.6, display: 'block', textAlign: 'right', marginTop: '4px'}}>
-                                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </span>
-                                         )}
+                            <div ref={chatContainerRef} className={`chat-box-messages p-3 flex-grow-1 ${theme === "dark" ? "dark" : ""}`} style={{ overflowY: "auto" }}>
+                                {messages.map((msg) => {
+                                    const isUser = msg.senderID === currentUserID;
+                                    const isSystem = msg.type === 'system' || msg.senderID === 'system';
+                                    const senderDisplayName = isUser ? registeredName : (userMap[msg.senderID] || msg.senderName || (isSystem ? "System" : "Partner"));
+
+                                    // Define base style for all bubbles
+                                    let bubbleStyle = {
+                                        padding: '0.5rem 0.85rem', wordBreak: 'break-word',
+                                        boxShadow: '0 1px 1px rgba(0,0,0,0.08)', maxWidth: '80%',
+                                        lineHeight: '1.4', fontSize: '0.95rem', marginBottom: "8px",
+                                        textAlign: 'left', display: 'inline-block' // Make bubbles inline-block for better wrapping
+                                    };
+
+                                    if (isSystem) {
+                                        bubbleStyle = {
+                                            ...bubbleStyle, fontStyle: 'italic', fontSize: '0.8em',
+                                            textAlign: 'center', width: 'auto', maxWidth: '90%',
+                                            marginLeft: 'auto', marginRight: 'auto', padding: "6px 12px",
+                                            borderRadius: "10px",
+                                            backgroundColor: theme === 'dark' ? '#3a3f44' : '#f1f3f5', // Adjusted system bubble colors
+                                            color: theme === 'dark' ? '#ced4da' : '#495057',
+                                            border: 'none', boxShadow: 'none',
+                                        };
+                                    } else if (isUser) {
+                                        bubbleStyle = { ...bubbleStyle,
+                                            backgroundColor: '#198754', color: 'white',
+                                            borderRadius: "15px 5px 15px 15px",
+                                        };
+                                    } else { // Partner message
+                                        bubbleStyle = { ...bubbleStyle,
+                                            backgroundColor: '#0d6efd', color: 'white',
+                                            borderRadius: "5px 15px 15px 15px",
+                                        };
+                                    }
+
+                                    return (
+                                        <div key={msg.id} className={`d-flex mb-2 ${isUser ? 'justify-content-end' : (isSystem ? 'justify-content-center' : 'justify-content-start')}`}>
+                                            <div style={bubbleStyle}> 
+                                                {!isUser && !isSystem && senderDisplayName && (
+                                                    <strong style={{ display: 'block', marginBottom: '2px', fontSize: '0.75rem', opacity: 0.8, color: theme === 'dark' ? (bubbleStyle.color === 'white' ? 'rgba(255,255,255,0.8)' : '#bbb') : (bubbleStyle.color === 'white' ? 'rgba(255,255,255,0.8)' :'#444') }}>
+                                                        {senderDisplayName}
+                                                    </strong>
+                                                )}
+                                                {msg.text} 
+                                                {!isSystem && msg.timestamp && (
+                                                    <span style={{fontSize: '0.65rem', opacity: 0.7, display: 'block', textAlign: 'right', marginTop: '3px', color: bubbleStyle.color === 'white' ? 'rgba(255,255,255,0.7)' : 'inherit' }}>
+                                                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                {messages.length === 0 && !status.includes("Connecting") && !isConnecting && (
+                                    <div className={`text-center ${theme === 'dark' ? 'text-light-emphasis' : 'text-muted'} mt-auto mb-auto p-3`}>
+                                        {status.includes("Waiting for partner") ? "Waiting for partner..." : "No messages yet. Say hi!"}
                                     </div>
-                                ))}
-                                {/* Placeholder when no messages */}
-                                {messages.length === 0 && !status.includes("Connecting") && (
-                                     <div className="text-center text-muted mt-auto mb-auto">
-                                         {status.includes("Waiting") ? "Waiting for partner..." : "No messages yet."}
-                                     </div>
                                 )}
                             </div>
 
-                             {/* Input Area & Actions (Restored Original Layout) */}
-                            <InputGroup className="mt-auto">
+                            <InputGroup className={`p-2 border-top chat-box-input-group ${theme === 'dark' ? 'border-secondary' : ''}`}>
                                 <Form.Control
-                                    as="textarea"
-                                    rows={1}
+                                    ref={messageInputRef}
+                                    as="textarea" rows={1}
                                     style={{ resize: 'none', overflowY: 'auto', maxHeight: '100px' }}
-                                    placeholder={
-                                        isConnecting ? "Connecting..."
-                                        // Mute placeholder removed
-                                        : (!userIDRef.current || !encryptionKeyRef.current || status.includes("Finding") || status.includes("Waiting") || status.includes("Skipping")) ? "Waiting for secure connection..."
-                                        : "Type message..."
-                                    }
+                                    placeholder={!chatStarted || !currentUserID ? "Enter name first" : (!Object.keys(userMap).find(id => id !== currentUserID && id !== 'system') || !currentEncryptionKey ? "Waiting for secure connection..." : "Type message...")}
                                     value={newMessage}
                                     onChange={(e) => setNewMessage(e.target.value)}
                                     onKeyDown={handleKeyPress}
-                                    disabled={isConnecting || !userIDRef.current || !encryptionKeyRef.current || status.includes("Finding") || status.includes("Waiting") || status.includes("Skipping") }
-                                    aria-label="Message Input"
+                                    disabled={!chatStarted || !currentUserID || !Object.keys(userMap).find(id => id !== currentUserID && id !== 'system') || !currentEncryptionKey || status.includes("Finding") || status.includes("Waiting") || status.includes("Skipping") || isConnecting}
+                                    className={theme === 'dark' ? 'form-control-dark' : ''}
                                 />
                                 <Button
-                                    variant="primary"
-                                    onClick={sendMessage}
-                                    disabled={isConnecting || !newMessage.trim() || !userIDRef.current || !encryptionKeyRef.current || status.includes("Finding") || status.includes("Waiting") || status.includes("Skipping")}
-                                    aria-label="Send Message"
+                                    variant="primary" onClick={sendMessageUI}
+                                    disabled={!chatStarted || !currentUserID || !Object.keys(userMap).find(id => id !== currentUserID && id !== 'system') || !currentEncryptionKey || !newMessage.trim() || status.includes("Finding") || status.includes("Waiting") || status.includes("Skipping") || isConnecting}
                                 >
                                     <FaPaperPlane />
                                 </Button>
-                                {/* Disabled Video Button */}
-                                <Button variant="success" className="ms-2" onClick={startVideoCall} disabled={true}>
-                                    <FaVideo />
-                                </Button>
                             </InputGroup>
-                            <div className="d-flex justify-content-between mt-2">
-                                <Button variant="warning" size="sm" onClick={skipToNextUser} disabled={isConnecting || !userIDRef.current || status.includes("Finding") || status.includes("Waiting") || status.includes("Skipping")}>
-                                    Skip Partner
-                                </Button>
-                                <Button variant="secondary" size="sm" onClick={goBackToHome}>
-                                    Leave Chat
-                                </Button>
-                            </div>
                         </Col>
                     </Row>
                 )}

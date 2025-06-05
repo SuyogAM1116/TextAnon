@@ -1,4 +1,5 @@
 {
+  "$schema": "https://json.schemastore.org/package.json",
   "name": "textanon",
   "version": "1.0.0",
   "description": "TextAnon is an anonymous text and video chat web application focused on privacy and security. This repository contains the frontend built using **React.js** and **Bootstrap** for styling.",
